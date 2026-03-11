@@ -1,0 +1,7 @@
+build/
+.vs/
+*.sfc
+*.smc
+*.srm
+CMakeSettings.json
+out/

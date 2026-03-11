@@ -1,0 +1,3 @@
+[submodule "ext/LakeSnes"]
+	path = ext/LakeSnes
+	url = https://github.com/angelo-wf/LakeSnes.git
