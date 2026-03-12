@@ -76,6 +76,11 @@ void snesrecomp_trigger_vblank(void);
 const uint8_t *snesrecomp_get_framebuffer(void);
 
 /*
+ * Dump PPU diagnostic info to a file. For debugging rendering issues.
+ */
+void snesrecomp_dump_ppu(const char *filepath);
+
+/*
  * Clean shutdown — frees all SNES hardware and closes SDL2.
  */
 void snesrecomp_shutdown(void);

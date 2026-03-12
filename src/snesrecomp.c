@@ -118,14 +118,19 @@ bool snesrecomp_begin_frame(void) {
 void snesrecomp_end_frame(void) {
     if (!s_snes) return;
 
+    /* Start-of-frame PPU bookkeeping (toggles evenFrame, resets mosaic, etc.) */
+    ppu_handleFrameStart(s_snes->ppu);
+
     /* Run all PPU scanlines for the frame */
     for (int line = 1; line <= 224; line++) {
         ppu_runLine(s_snes->ppu, line);
     }
     ppu_handleVblank(s_snes->ppu);
 
+    /* Copy rendered pixels from PPU internal buffer to output buffer */
+    snes_setPixels(s_snes, s_pixel_buf);
+
     /* Catch up APU audio and extract samples */
-    /* Run enough APU cycles for one frame */
     int apu_cycles = (int)(s_snes->palTiming ? 534 : 534);
     apu_runCycles(s_snes->apu, apu_cycles * 32);
     snes_setSamples(s_snes, s_audio_buf, SAMPLES_PER_FRAME);
@@ -148,6 +153,73 @@ void snesrecomp_trigger_vblank(void) {
 
 const uint8_t *snesrecomp_get_framebuffer(void) {
     return s_pixel_buf;
+}
+
+void snesrecomp_dump_ppu(const char *filepath) {
+    FILE *dbg = fopen(filepath, "w");
+    if (!dbg) return;
+    fprintf(dbg, "s_snes=%p\n", (void*)s_snes);
+    if (!s_snes) { fclose(dbg); return; }
+    Ppu *ppu = s_snes->ppu;
+    fprintf(dbg, "ppu=%p\n", (void*)ppu);
+    if (!ppu) { fclose(dbg); return; }
+    fprintf(dbg, "forcedBlank=%d brightness=%d mode=%d evenFrame=%d\n",
+           ppu->forcedBlank, ppu->brightness, ppu->mode, ppu->evenFrame);
+    fprintf(dbg, "layer mainScreenEnabled: %d %d %d %d %d\n",
+           ppu->layer[0].mainScreenEnabled, ppu->layer[1].mainScreenEnabled,
+           ppu->layer[2].mainScreenEnabled, ppu->layer[3].mainScreenEnabled,
+           ppu->layer[4].mainScreenEnabled);
+    fprintf(dbg, "BG tilemapAdr: %04X %04X %04X %04X\n",
+           ppu->bgLayer[0].tilemapAdr, ppu->bgLayer[1].tilemapAdr,
+           ppu->bgLayer[2].tilemapAdr, ppu->bgLayer[3].tilemapAdr);
+    fprintf(dbg, "BG tileAdr: %04X %04X %04X %04X\n",
+           ppu->bgLayer[0].tileAdr, ppu->bgLayer[1].tileAdr,
+           ppu->bgLayer[2].tileAdr, ppu->bgLayer[3].tileAdr);
+    fprintf(dbg, "CGRAM[0-7]: %04X %04X %04X %04X %04X %04X %04X %04X\n",
+           ppu->cgram[0], ppu->cgram[1], ppu->cgram[2], ppu->cgram[3],
+           ppu->cgram[4], ppu->cgram[5], ppu->cgram[6], ppu->cgram[7]);
+    fprintf(dbg, "VRAM[0-7]: %04X %04X %04X %04X %04X %04X %04X %04X\n",
+           ppu->vram[0], ppu->vram[1], ppu->vram[2], ppu->vram[3],
+           ppu->vram[4], ppu->vram[5], ppu->vram[6], ppu->vram[7]);
+    /* Dump VRAM at key tilemap addresses */
+    fprintf(dbg, "VRAM[$1000-$1007]: %04X %04X %04X %04X %04X %04X %04X %04X\n",
+           ppu->vram[0x1000], ppu->vram[0x1001], ppu->vram[0x1002], ppu->vram[0x1003],
+           ppu->vram[0x1004], ppu->vram[0x1005], ppu->vram[0x1006], ppu->vram[0x1007]);
+    fprintf(dbg, "VRAM[$1400-$1407]: %04X %04X %04X %04X %04X %04X %04X %04X\n",
+           ppu->vram[0x1400], ppu->vram[0x1401], ppu->vram[0x1402], ppu->vram[0x1403],
+           ppu->vram[0x1400+4], ppu->vram[0x1400+5], ppu->vram[0x1400+6], ppu->vram[0x1400+7]);
+    fprintf(dbg, "VRAM[$C000-$C007]: %04X %04X %04X %04X %04X %04X %04X %04X\n",
+           ppu->vram[0xC000&0x7FFF], ppu->vram[(0xC001)&0x7FFF], ppu->vram[(0xC002)&0x7FFF], ppu->vram[(0xC003)&0x7FFF],
+           ppu->vram[(0xC004)&0x7FFF], ppu->vram[(0xC005)&0x7FFF], ppu->vram[(0xC006)&0x7FFF], ppu->vram[(0xC007)&0x7FFF]);
+    /* VRAM size check */
+    int vram_nonzero = 0;
+    for (int i = 0; i < 0x8000; i++) {
+        if (ppu->vram[i] != 0) vram_nonzero++;
+    }
+    fprintf(dbg, "VRAM total nonzero words: %d / 32768\n", vram_nonzero);
+    /* VRAM heatmap: count nonzero words in each 1K-word block */
+    fprintf(dbg, "VRAM heatmap (1K-word blocks, word addr):\n");
+    for (int blk = 0; blk < 32; blk++) {
+        int cnt = 0;
+        for (int j = 0; j < 0x400; j++) {
+            if (ppu->vram[blk * 0x400 + j] != 0) cnt++;
+        }
+        if (cnt > 0) {
+            fprintf(dbg, "  $%04X-$%04X: %4d / 1024 nonzero\n",
+                   blk * 0x400, blk * 0x400 + 0x3FF, cnt);
+        }
+    }
+    int pb_nonzero = 0;
+    for (int i = 0; i < 512 * 2 * 239 * 4; i += 101) {
+        if (ppu->pixelBuffer[i] != 0) pb_nonzero++;
+    }
+    fprintf(dbg, "pixelBuffer nonzero: %d\n", pb_nonzero);
+    int sb_nonzero = 0;
+    for (int i = 0; i < 512 * 478 * 4; i += 101) {
+        if (s_pixel_buf[i] != 0) sb_nonzero++;
+    }
+    fprintf(dbg, "s_pixel_buf nonzero: %d\n", sb_nonzero);
+    fclose(dbg);
 }
 
 void snesrecomp_shutdown(void) {
