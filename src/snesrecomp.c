@@ -209,6 +209,42 @@ void snesrecomp_dump_ppu(const char *filepath) {
                    blk * 0x400, blk * 0x400 + 0x3FF, cnt);
         }
     }
+    /* OBJ settings */
+    fprintf(dbg, "objSize=%d objTileAdr1=$%04X objTileAdr2=$%04X\n",
+           ppu->objSize, ppu->objTileAdr1, ppu->objTileAdr2);
+    /* OAM entries (first 16 sprites) */
+    fprintf(dbg, "OAM (first 16 sprites):\n");
+    for (int i = 0; i < 16; i++) {
+        int idx = i * 2;
+        uint16_t w0 = ppu->oam[idx];
+        uint16_t w1 = ppu->oam[idx + 1];
+        uint8_t x = w0 & 0xFF;
+        uint8_t y = w0 >> 8;
+        uint8_t tile = w1 & 0xFF;
+        int nt = (w1 >> 8) & 1;
+        int pal = (w1 >> 9) & 7;
+        int pri = (w1 >> 12) & 3;
+        int hf = (w1 >> 14) & 1;
+        int vf = (w1 >> 15) & 1;
+        /* High OAM: size + X bit 9 */
+        int hi_byte = ppu->highOam[idx >> 3];
+        int x9 = (hi_byte >> (idx & 7)) & 1;
+        int sz = (hi_byte >> ((idx & 7) + 1)) & 1;
+        fprintf(dbg, "  [%2d] x=%3d%s y=%3d tile=$%02X nt=%d pal=%d pri=%d hf=%d vf=%d sz=%d\n",
+               i, x | (x9 << 8), x9 ? "+" : " ", y, tile, nt, pal, pri, hf, vf, sz);
+    }
+    /* CGRAM OBJ palette (entries 128-143 = OBJ palette 0) */
+    fprintf(dbg, "CGRAM OBJ pal 0 (128-143): ");
+    for (int i = 128; i < 144; i++) {
+        fprintf(dbg, "%04X ", ppu->cgram[i]);
+    }
+    fprintf(dbg, "\n");
+    /* VRAM at sprite tile base ($4000) - first 16 words */
+    fprintf(dbg, "VRAM[$4000-$400F]: ");
+    for (int i = 0; i < 16; i++) {
+        fprintf(dbg, "%04X ", ppu->vram[0x4000 + i]);
+    }
+    fprintf(dbg, "\n");
     int pb_nonzero = 0;
     for (int i = 0; i < 512 * 2 * 239 * 4; i += 101) {
         if (ppu->pixelBuffer[i] != 0) pb_nonzero++;

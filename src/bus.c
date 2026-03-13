@@ -43,12 +43,15 @@ void bus_write8(uint8_t bank, uint16_t addr, uint8_t val) {
         }
     }
 
-    /* DMA fix: LakeSnes defers DMA execution to the next CPU access cycle
-     * (via dma_handleDma called from snes_cpuRead/Write). Since recompiled
-     * code bypasses the CPU, we must explicitly run pending DMA after
-     * writing to MDMAEN ($420B) or HDMAEN ($420C). */
+    /* DMA fix: LakeSnes uses a 2-step state machine for DMA:
+     *   Step 1: dmaState 1→2 (arm)
+     *   Step 2: dmaState 2→0 (execute transfer)
+     * Normally each step happens on successive CPU access cycles.
+     * Since recompiled code bypasses the CPU, we call handleDma twice
+     * to complete both steps immediately. */
     if (addr == 0x420B || addr == 0x420C) {
-        dma_handleDma(snes->dma, 8);
+        dma_handleDma(snes->dma, 8);  /* state 1→2 (arm) */
+        dma_handleDma(snes->dma, 8);  /* state 2→0 (execute) */
     }
 }
 
