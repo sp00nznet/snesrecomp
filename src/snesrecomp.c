@@ -26,6 +26,11 @@ Snes *snesrecomp_get_snes(void) {
     return s_snes;
 }
 
+uint16_t snesrecomp_read_vram(uint16_t word_addr) {
+    if (!s_snes || !s_snes->ppu) return 0;
+    return s_snes->ppu->vram[word_addr & 0x7FFF];
+}
+
 bool snesrecomp_init(const char *window_title, int scale) {
     /* Create LakeSnes instance (allocates CPU, PPU, APU, DMA, Cart) */
     s_snes = snes_init();
@@ -117,7 +122,6 @@ bool snesrecomp_begin_frame(void) {
 
 void snesrecomp_end_frame(void) {
     if (!s_snes) return;
-
     /* Start-of-frame PPU bookkeeping (toggles evenFrame, resets mosaic, etc.) */
     ppu_handleFrameStart(s_snes->ppu);
 
@@ -234,17 +238,78 @@ void snesrecomp_dump_ppu(const char *filepath) {
                i, x | (x9 << 8), x9 ? "+" : " ", y, tile, nt, pal, pri, hf, vf, sz);
     }
     /* CGRAM OBJ palette (entries 128-143 = OBJ palette 0) */
-    fprintf(dbg, "CGRAM OBJ pal 0 (128-143): ");
-    for (int i = 128; i < 144; i++) {
-        fprintf(dbg, "%04X ", ppu->cgram[i]);
+    for (int p = 0; p < 8; p++) {
+        fprintf(dbg, "CGRAM OBJ pal %d (%d-%d): ", p, 128+p*16, 128+p*16+15);
+        for (int i = 128+p*16; i < 128+p*16+16; i++) {
+            fprintf(dbg, "%04X ", ppu->cgram[i]);
+        }
+        fprintf(dbg, "\n");
     }
-    fprintf(dbg, "\n");
     /* VRAM at sprite tile base ($4000) - first 16 words */
     fprintf(dbg, "VRAM[$4000-$400F]: ");
     for (int i = 0; i < 16; i++) {
         fprintf(dbg, "%04X ", ppu->vram[0x4000 + i]);
     }
     fprintf(dbg, "\n");
+    /* VRAM at DMA'd sprite tile locations (per slot) */
+    {
+        static const uint16_t slot_vram[] = {0x5800,0x5840,0x5880,0x58C0,0x5C00,0x5C40,0x5C80,0x5CC0};
+        for (int s = 0; s < 8; s++) {
+            uint16_t base = slot_vram[s];
+            int nz = 0;
+            for (int w = 0; w < 16; w++) {
+                if (ppu->vram[base + w] != 0) nz++;
+            }
+            fprintf(dbg, "VRAM[$%04X] slot%d: %d/16 nonzero", base, s, nz);
+            if (nz > 0) {
+                fprintf(dbg, " first4: %04X %04X %04X %04X",
+                       ppu->vram[base], ppu->vram[base+1], ppu->vram[base+2], ppu->vram[base+3]);
+            }
+            fprintf(dbg, "\n");
+        }
+    }
+    /* WRAM OAM staging buffer at $0200 (first 16 bytes) */
+    fprintf(dbg, "WRAM[$0200-$020F]: ");
+    for (int i = 0; i < 16; i++) {
+        fprintf(dbg, "%02X ", s_snes->ram[0x0200 + i]);
+    }
+    fprintf(dbg, "\n");
+    /* WRAM OAM "PUSH START" region at $03D0 (48 bytes = 12 sprites) */
+    fprintf(dbg, "WRAM[$03D0-$03FF]: ");
+    for (int i = 0; i < 48; i++) {
+        fprintf(dbg, "%02X ", s_snes->ram[0x03D0 + i]);
+    }
+    fprintf(dbg, "\n");
+    /* WRAM OAM high table at $0400 (32 bytes) */
+    fprintf(dbg, "WRAM[$0400-$041F]: ");
+    for (int i = 0; i < 32; i++) {
+        fprintf(dbg, "%02X ", s_snes->ram[0x0400 + i]);
+    }
+    fprintf(dbg, "\n");
+    /* PPU OAM entries 116-127 (PUSH START text sprites) */
+    fprintf(dbg, "OAM (sprites 116-127):\n");
+    for (int i = 116; i < 128; i++) {
+        int idx = i * 2;
+        uint16_t w0 = ppu->oam[idx];
+        uint16_t w1 = ppu->oam[idx + 1];
+        uint8_t x = w0 & 0xFF;
+        uint8_t y = w0 >> 8;
+        uint8_t tile = w1 & 0xFF;
+        int nt = (w1 >> 8) & 1;
+        int pal = (w1 >> 9) & 7;
+        int pri = (w1 >> 12) & 3;
+        int hf = (w1 >> 14) & 1;
+        int vf = (w1 >> 15) & 1;
+        int hi_byte = ppu->highOam[idx >> 3];
+        int x9 = (hi_byte >> (idx & 7)) & 1;
+        int sz = (hi_byte >> ((idx & 7) + 1)) & 1;
+        fprintf(dbg, "  [%3d] x=%3d%s y=%3d tile=$%02X nt=%d pal=%d pri=%d hf=%d vf=%d sz=%d\n",
+               i, x | (x9 << 8), x9 ? "+" : " ", y, tile, nt, pal, pri, hf, vf, sz);
+    }
+    /* DP+$38 frame counter and DP+$7B menu state */
+    fprintf(dbg, "DP+$38=%04X DP+$7B=%04X\n",
+           (unsigned)s_snes->ram[g_cpu.DP + 0x38] | ((unsigned)s_snes->ram[g_cpu.DP + 0x39] << 8),
+           (unsigned)s_snes->ram[g_cpu.DP + 0x7B] | ((unsigned)s_snes->ram[g_cpu.DP + 0x7C] << 8));
     int pb_nonzero = 0;
     for (int i = 0; i < 512 * 2 * 239 * 4; i += 101) {
         if (ppu->pixelBuffer[i] != 0) pb_nonzero++;
@@ -256,6 +321,59 @@ void snesrecomp_dump_ppu(const char *filepath) {
     }
     fprintf(dbg, "s_pixel_buf nonzero: %d\n", sb_nonzero);
     fclose(dbg);
+
+    /* Save BMP screenshot alongside the PPU dump */
+    {
+        /* Build BMP path from filepath: replace extension with .bmp */
+        char bmp_path[512];
+        strncpy(bmp_path, filepath, sizeof(bmp_path) - 1);
+        bmp_path[sizeof(bmp_path) - 1] = '\0';
+        char *dot = strrchr(bmp_path, '.');
+        if (dot) strcpy(dot, ".bmp");
+        else strcat(bmp_path, ".bmp");
+
+        /* SNES renders 256x224 (or 512x224 in hi-res, but PPU buffer is 512 wide).
+         * s_pixel_buf is 512×478×4 (RGBX). We save the left 256 pixels of 224 lines. */
+        int w = 256, h = 224;
+        FILE *bmp = fopen(bmp_path, "wb");
+        if (bmp) {
+            /* BMP header (54 bytes) */
+            int row_stride = w * 3;
+            int pad = (4 - (row_stride % 4)) % 4;
+            int data_size = (row_stride + pad) * h;
+            int file_size = 54 + data_size;
+            uint8_t hdr[54];
+            memset(hdr, 0, 54);
+            hdr[0] = 'B'; hdr[1] = 'M';
+            hdr[2] = file_size & 0xFF; hdr[3] = (file_size >> 8) & 0xFF;
+            hdr[4] = (file_size >> 16) & 0xFF; hdr[5] = (file_size >> 24) & 0xFF;
+            hdr[10] = 54; /* pixel data offset */
+            hdr[14] = 40; /* DIB header size */
+            hdr[18] = w & 0xFF; hdr[19] = (w >> 8) & 0xFF;
+            hdr[22] = h & 0xFF; hdr[23] = (h >> 8) & 0xFF;
+            hdr[26] = 1; /* planes */
+            hdr[28] = 24; /* bits per pixel */
+            hdr[34] = data_size & 0xFF; hdr[35] = (data_size >> 8) & 0xFF;
+            hdr[36] = (data_size >> 16) & 0xFF; hdr[37] = (data_size >> 24) & 0xFF;
+            fwrite(hdr, 1, 54, bmp);
+
+            /* BMP stores bottom-up, BGR */
+            uint8_t pad_bytes[3] = {0, 0, 0};
+            for (int y = h - 1; y >= 0; y--) {
+                for (int x = 0; x < w; x++) {
+                    /* s_pixel_buf is RGBX, 512 pixels wide, 4 bytes per pixel */
+                    int idx = (y * 512 + x) * 4;
+                    uint8_t bgr[3];
+                    bgr[0] = s_pixel_buf[idx + 2]; /* B */
+                    bgr[1] = s_pixel_buf[idx + 1]; /* G */
+                    bgr[2] = s_pixel_buf[idx + 0]; /* R */
+                    fwrite(bgr, 1, 3, bmp);
+                }
+                if (pad > 0) fwrite(pad_bytes, 1, pad, bmp);
+            }
+            fclose(bmp);
+        }
+    }
 }
 
 void snesrecomp_shutdown(void) {

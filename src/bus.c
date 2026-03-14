@@ -14,13 +14,10 @@
 #include "gsu.h"
 
 #include <string.h>
-#include <stdio.h>
 
 /* Access to the LakeSnes instance (owned by snesrecomp.c) */
 extern Snes *snesrecomp_get_snes(void);
 
-/* Debug: watch for writes to WRAM $7F:4000 (palette buffer) */
-static int s_pal_watch_count = 0;
 
 uint8_t bus_read8(uint8_t bank, uint16_t addr) {
     Snes *snes = snesrecomp_get_snes();
@@ -34,14 +31,6 @@ void bus_write8(uint8_t bank, uint16_t addr, uint8_t val) {
     if (!snes) return;
     uint32_t flat = ((uint32_t)bank << 16) | addr;
     snes_write(snes, flat, val);
-
-    /* Debug: detect writes to WRAM $7F:4000-$7F:41FF (palette buffer) */
-    if (bank == 0x7F && addr >= 0x4000 && addr < 0x4200 && val != 0) {
-        if (s_pal_watch_count < 10) {
-            printf("PAL_WATCH: bus_write8($%02X:%04X, $%02X)\n", bank, addr, val);
-            s_pal_watch_count++;
-        }
-    }
 
     /* DMA fix: LakeSnes uses a 2-step state machine for DMA:
      *   Step 1: dmaState 1→2 (arm)
@@ -87,15 +76,7 @@ uint8_t bus_wram_read8(uint32_t offset) {
 void bus_wram_write8(uint32_t offset, uint8_t val) {
     Snes *snes = snesrecomp_get_snes();
     if (!snes) return;
-    /* Debug: detect direct WRAM writes to palette buffer ($7F:4000 = offset $14000) */
-    uint32_t masked = offset & 0x1FFFF;
-    if (masked >= 0x14000 && masked < 0x14200 && val != 0) {
-        if (s_pal_watch_count < 10) {
-            printf("PAL_WATCH: bus_wram_write8($%05X, $%02X)\n", masked, val);
-            s_pal_watch_count++;
-        }
-    }
-    snes->ram[masked] = val;
+    snes->ram[offset & 0x1FFFF] = val;
 }
 
 uint16_t bus_wram_read16(uint32_t offset) {

@@ -76,6 +76,11 @@ void snesrecomp_trigger_vblank(void);
 const uint8_t *snesrecomp_get_framebuffer(void);
 
 /*
+ * Read a VRAM word at the given word address (0-32767).
+ */
+uint16_t snesrecomp_read_vram(uint16_t word_addr);
+
+/*
  * Dump PPU diagnostic info to a file. For debugging rendering issues.
  */
 void snesrecomp_dump_ppu(const char *filepath);
