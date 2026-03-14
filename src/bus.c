@@ -10,6 +10,8 @@
 
 #include "snesrecomp/bus.h"
 #include "snes.h"
+#include "cart.h"
+#include "gsu.h"
 
 #include <string.h>
 
@@ -87,4 +89,29 @@ const uint8_t *bus_get_rom(uint32_t *size_out) {
     if (!snes || !snes->cart) return NULL;
     if (size_out) *size_out = snes->cart->romSize;
     return snes->cart->rom;
+}
+
+/* --- GSU / Super FX access --- */
+
+bool bus_has_gsu(void) {
+    Snes *snes = snesrecomp_get_snes();
+    return snes && snes->cart && snes->cart->gsu;
+}
+
+uint8_t bus_gsu_read(uint16_t addr) {
+    Snes *snes = snesrecomp_get_snes();
+    if (!snes || !snes->cart || !snes->cart->gsu) return 0;
+    return gsu_read(snes->cart->gsu, addr);
+}
+
+void bus_gsu_write(uint16_t addr, uint8_t val) {
+    Snes *snes = snesrecomp_get_snes();
+    if (!snes || !snes->cart || !snes->cart->gsu) return;
+    gsu_write(snes->cart->gsu, addr, val);
+}
+
+void bus_gsu_run(void) {
+    Snes *snes = snesrecomp_get_snes();
+    if (!snes || !snes->cart || !snes->cart->gsu) return;
+    gsu_run(snes->cart->gsu);
 }

@@ -40,4 +40,21 @@ uint8_t *bus_get_wram(void);
 /* Get pointer to ROM data */
 const uint8_t *bus_get_rom(uint32_t *size_out);
 
+/*
+ * Super FX / GSU access — for recompiled code that needs to interact
+ * with the GSU coprocessor directly (e.g., writing R15 to start execution,
+ * reading status flags, setting up screen parameters).
+ *
+ * These are thin wrappers around gsu_read/gsu_write.
+ * Returns 0 / no-op if no GSU is present.
+ */
+uint8_t bus_gsu_read(uint16_t addr);
+void    bus_gsu_write(uint16_t addr, uint8_t val);
+
+/* Trigger a GSU execution run (call after writing R15 high byte) */
+void    bus_gsu_run(void);
+
+/* Check if cartridge has a GSU */
+bool    bus_has_gsu(void);
+
 #endif /* SNESRECOMP_BUS_H */
