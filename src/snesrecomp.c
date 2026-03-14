@@ -357,16 +357,19 @@ void snesrecomp_dump_ppu(const char *filepath) {
             hdr[36] = (data_size >> 16) & 0xFF; hdr[37] = (data_size >> 24) & 0xFF;
             fwrite(hdr, 1, 54, bmp);
 
-            /* BMP stores bottom-up, BGR */
+            /* BMP stores bottom-up, BGR.
+             * s_pixel_buf layout: 512 "sub-pixels" per row, 4 bytes each = 2048 bytes/row.
+             * Each SNES pixel = 2 sub-pixels (8 bytes). In normal mode both are identical.
+             * Pixel format is XBGR (offset 1): byte 0=X, 1=B, 2=G, 3=R per sub-pixel. */
             uint8_t pad_bytes[3] = {0, 0, 0};
             for (int y = h - 1; y >= 0; y--) {
                 for (int x = 0; x < w; x++) {
-                    /* s_pixel_buf is RGBX, 512 pixels wide, 4 bytes per pixel */
-                    int idx = (y * 512 + x) * 4;
+                    /* Stride 8 bytes per SNES pixel (skip sub-pixel 1) */
+                    int idx = y * 2048 + x * 8;
                     uint8_t bgr[3];
-                    bgr[0] = s_pixel_buf[idx + 2]; /* B */
-                    bgr[1] = s_pixel_buf[idx + 1]; /* G */
-                    bgr[2] = s_pixel_buf[idx + 0]; /* R */
+                    bgr[0] = s_pixel_buf[idx + 1]; /* B */
+                    bgr[1] = s_pixel_buf[idx + 2]; /* G */
+                    bgr[2] = s_pixel_buf[idx + 3]; /* R */
                     fwrite(bgr, 1, 3, bmp);
                 }
                 if (pad > 0) fwrite(pad_bytes, 1, pad, bmp);

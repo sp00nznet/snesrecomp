@@ -14,6 +14,7 @@
 #include "gsu.h"
 
 #include <string.h>
+#include <stdbool.h>
 
 /* Access to the LakeSnes instance (owned by snesrecomp.c) */
 extern Snes *snesrecomp_get_snes(void);
@@ -104,26 +105,10 @@ const uint8_t *bus_get_rom(uint32_t *size_out) {
 }
 
 /* --- GSU / Super FX access --- */
+/* Stub: upstream LakeSnes Cart doesn't have a gsu field.
+ * These are no-ops for games that don't use Super FX. */
 
-bool bus_has_gsu(void) {
-    Snes *snes = snesrecomp_get_snes();
-    return snes && snes->cart && snes->cart->gsu;
-}
-
-uint8_t bus_gsu_read(uint16_t addr) {
-    Snes *snes = snesrecomp_get_snes();
-    if (!snes || !snes->cart || !snes->cart->gsu) return 0;
-    return gsu_read(snes->cart->gsu, addr);
-}
-
-void bus_gsu_write(uint16_t addr, uint8_t val) {
-    Snes *snes = snesrecomp_get_snes();
-    if (!snes || !snes->cart || !snes->cart->gsu) return;
-    gsu_write(snes->cart->gsu, addr, val);
-}
-
-void bus_gsu_run(void) {
-    Snes *snes = snesrecomp_get_snes();
-    if (!snes || !snes->cart || !snes->cart->gsu) return;
-    gsu_run(snes->cart->gsu);
-}
+bool bus_has_gsu(void) { return false; }
+uint8_t bus_gsu_read(uint16_t addr) { (void)addr; return 0; }
+void bus_gsu_write(uint16_t addr, uint8_t val) { (void)addr; (void)val; }
+void bus_gsu_run(void) { }
