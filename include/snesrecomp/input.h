@@ -2,14 +2,16 @@
 #define SNESRECOMP_INPUT_H
 
 /*
- * SNES joypad input — maps keyboard/gamepad to SNES button state.
+ * SNES input — maps keyboard/gamepad/mouse to SNES controller state.
  *
+ * Supports both standard joypad and SNES Mouse input devices.
  * Button state is automatically fed into LakeSnes's input system
  * during snesrecomp_begin_frame(), so the hardware auto-joypad read
  * registers ($4218-$421F) work exactly like real hardware.
  */
 
 #include <stdint.h>
+#include <stdbool.h>
 
 /* SNES joypad button indices (for snes_setButtonState) */
 #define SNES_BTN_IDX_B       0
@@ -39,10 +41,59 @@
 #define SNES_BTN_L       0x0020
 #define SNES_BTN_R       0x0010
 
-/* Update keyboard/gamepad state and feed into LakeSnes input system */
+/* Input device types */
+#define SNES_INPUT_JOYPAD   0
+#define SNES_INPUT_MOUSE    1
+
+/*
+ * SNES Mouse state — tracks SDL mouse and converts to the SNES mouse
+ * serial protocol format.
+ *
+ * SNES Mouse serial data (32 bits, read via $4016/$4017):
+ *   Bits  0-7:  Signature (0x00 = mouse connected)
+ *   Bit   8:    Right button
+ *   Bit   9:    Left button
+ *   Bits 10-11: Speed/sensitivity (0=slow, 1=medium, 2=fast)
+ *   Bits 12-15: Unused (0)
+ *   Bits 16-23: Y displacement (bit 16=sign, bits 17-23=magnitude)
+ *   Bits 24-31: X displacement (bit 24=sign, bits 25-31=magnitude)
+ *
+ * Auto-joypad reads the first 16 bits into portAutoRead[0/1].
+ * The displacement bytes (bits 16-31) must be read manually from
+ * $4016/$4017 after auto-joypad completes.
+ */
+typedef struct {
+    int     dx, dy;     /* accumulated mouse delta since last latch */
+    bool    left;       /* left button pressed */
+    bool    right;      /* right button pressed */
+    uint8_t speed;      /* sensitivity: 0=slow, 1=medium, 2=fast */
+    int     read_count; /* serial read position (for $4016/$4017 reads) */
+    uint32_t latched;   /* full 32-bit latched serial data */
+} SnesMouseState;
+
+/*
+ * Set the input device type for a port (1 or 2).
+ * Use SNES_INPUT_JOYPAD (default) or SNES_INPUT_MOUSE.
+ */
+void recomp_input_set_device(int port, int device_type);
+
+/* Get the mouse state for a port (returns NULL if port is not a mouse) */
+SnesMouseState *recomp_input_get_mouse(int port);
+
+/* Update keyboard/gamepad/mouse state and feed into LakeSnes input system */
 void recomp_input_update(void);
 
 /* Read joypad auto-read result for a port (0-3) */
 uint16_t recomp_input_read_joypad(int port);
+
+/*
+ * Read the next serial bit from an input port (emulates $4016/$4017 reads).
+ * For joypad: returns controller serial data.
+ * For mouse: returns the full 32-bit mouse serial data bit-by-bit.
+ */
+uint8_t recomp_input_serial_read(int port);
+
+/* Latch input state (emulates write to $4016) */
+void recomp_input_latch(bool value);
 
 #endif /* SNESRECOMP_INPUT_H */

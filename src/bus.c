@@ -11,7 +11,6 @@
 #include "snesrecomp/bus.h"
 #include "snes.h"
 #include "cart.h"
-#include "gsu.h"
 
 #include <string.h>
 #include <stdbool.h>
@@ -104,11 +103,3 @@ const uint8_t *bus_get_rom(uint32_t *size_out) {
     return snes->cart->rom;
 }
 
-/* --- GSU / Super FX access --- */
-/* Stub: upstream LakeSnes Cart doesn't have a gsu field.
- * These are no-ops for games that don't use Super FX. */
-
-bool bus_has_gsu(void) { return false; }
-uint8_t bus_gsu_read(uint16_t addr) { (void)addr; return 0; }
-void bus_gsu_write(uint16_t addr, uint8_t val) { (void)addr; (void)val; }
-void bus_gsu_run(void) { }

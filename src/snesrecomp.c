@@ -122,6 +122,7 @@ bool snesrecomp_begin_frame(void) {
 
 void snesrecomp_end_frame(void) {
     if (!s_snes) return;
+
     /* Start-of-frame PPU bookkeeping (toggles evenFrame, resets mosaic, etc.) */
     ppu_handleFrameStart(s_snes->ppu);
 
@@ -286,7 +287,7 @@ void snesrecomp_dump_ppu(const char *filepath) {
         fprintf(dbg, "%02X ", s_snes->ram[0x0400 + i]);
     }
     fprintf(dbg, "\n");
-    /* PPU OAM entries 116-127 (PUSH START text sprites) */
+    /* PPU OAM entries 116-127 */
     fprintf(dbg, "OAM (sprites 116-127):\n");
     for (int i = 116; i < 128; i++) {
         int idx = i * 2;
@@ -306,10 +307,7 @@ void snesrecomp_dump_ppu(const char *filepath) {
         fprintf(dbg, "  [%3d] x=%3d%s y=%3d tile=$%02X nt=%d pal=%d pri=%d hf=%d vf=%d sz=%d\n",
                i, x | (x9 << 8), x9 ? "+" : " ", y, tile, nt, pal, pri, hf, vf, sz);
     }
-    /* DP+$38 frame counter and DP+$7B menu state */
-    fprintf(dbg, "DP+$38=%04X DP+$7B=%04X\n",
-           (unsigned)s_snes->ram[g_cpu.DP + 0x38] | ((unsigned)s_snes->ram[g_cpu.DP + 0x39] << 8),
-           (unsigned)s_snes->ram[g_cpu.DP + 0x7B] | ((unsigned)s_snes->ram[g_cpu.DP + 0x7C] << 8));
+    /* pixelBuffer check */
     int pb_nonzero = 0;
     for (int i = 0; i < 512 * 2 * 239 * 4; i += 101) {
         if (ppu->pixelBuffer[i] != 0) pb_nonzero++;
@@ -333,7 +331,7 @@ void snesrecomp_dump_ppu(const char *filepath) {
         else strcat(bmp_path, ".bmp");
 
         /* SNES renders 256x224 (or 512x224 in hi-res, but PPU buffer is 512 wide).
-         * s_pixel_buf is 512×478×4 (RGBX). We save the left 256 pixels of 224 lines. */
+         * s_pixel_buf is 512x478x4 (RGBX). We save the left 256 pixels of 224 lines. */
         int w = 256, h = 224;
         FILE *bmp = fopen(bmp_path, "wb");
         if (bmp) {
@@ -357,14 +355,10 @@ void snesrecomp_dump_ppu(const char *filepath) {
             hdr[36] = (data_size >> 16) & 0xFF; hdr[37] = (data_size >> 24) & 0xFF;
             fwrite(hdr, 1, 54, bmp);
 
-            /* BMP stores bottom-up, BGR.
-             * s_pixel_buf layout: 512 "sub-pixels" per row, 4 bytes each = 2048 bytes/row.
-             * Each SNES pixel = 2 sub-pixels (8 bytes). In normal mode both are identical.
-             * Pixel format is XBGR (offset 1): byte 0=X, 1=B, 2=G, 3=R per sub-pixel. */
+            /* BMP stores bottom-up, BGR. */
             uint8_t pad_bytes[3] = {0, 0, 0};
             for (int y = h - 1; y >= 0; y--) {
                 for (int x = 0; x < w; x++) {
-                    /* Stride 8 bytes per SNES pixel (skip sub-pixel 1) */
                     int idx = y * 2048 + x * 8;
                     uint8_t bgr[3];
                     bgr[0] = s_pixel_buf[idx + 1]; /* B */

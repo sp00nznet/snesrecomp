@@ -106,6 +106,9 @@ void platform_queue_audio(const int16_t *samples, int sample_count) {
     }
 }
 
+/* Mouse motion accumulator (defined in input.c) */
+extern void recomp_input_accumulate_mouse(int dx, int dy);
+
 bool platform_poll_events(void) {
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
@@ -115,6 +118,9 @@ bool platform_poll_events(void) {
         case SDL_KEYDOWN:
             if (ev.key.keysym.sym == SDLK_ESCAPE)
                 return false;
+            break;
+        case SDL_MOUSEMOTION:
+            recomp_input_accumulate_mouse(ev.motion.xrel, ev.motion.yrel);
             break;
         default:
             break;

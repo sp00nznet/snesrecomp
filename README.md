@@ -47,7 +47,7 @@ This is the same approach used by [N64Recomp](https://github.com/N64Recomp/N64Re
 | **Memory Bus** | 24-bit address routing to all hardware | Adapter over LakeSnes |
 | **Function Table** | Hash-table dispatch for recompiled functions by SNES address | Recomp utility |
 | **Platform** | SDL2 window, renderer, audio output, frame timing | SDL2 |
-| **Input** | Keyboard-to-SNES-joypad mapping, feeds hardware auto-read | SDL2 + LakeSnes |
+| **Input** | Joypad + SNES Mouse, keyboard/mouse mapping, hardware auto-read | SDL2 + LakeSnes |
 
 ## Quick Start
 
@@ -174,7 +174,7 @@ Here's the general workflow:
 5. **Wire up the main loop** — call the game's entry point function each frame
 6. **Link against snesrecomp** — all hardware just works
 
-The [Super Mario Kart recompilation](https://github.com/sp00nznet/mk) is the first project using this library. Check it out for a real-world example.
+The [Super Mario Kart recompilation](https://github.com/sp00nznet/mk) and [Mario Paint recompilation](https://github.com/sp00nznet/mariopaint) are projects using this library. Check them out for real-world examples.
 
 ## Credits
 
