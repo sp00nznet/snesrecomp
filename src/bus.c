@@ -11,6 +11,7 @@
 #include "snesrecomp/bus.h"
 #include "snes.h"
 #include "cart.h"
+#include "apu.h"
 
 #include <string.h>
 #include <stdbool.h>
@@ -101,5 +102,29 @@ const uint8_t *bus_get_rom(uint32_t *size_out) {
     if (!snes || !snes->cart) return NULL;
     if (size_out) *size_out = snes->cart->romSize;
     return snes->cart->rom;
+}
+
+void bus_apu_write_ram(uint16_t spc_addr, uint8_t val) {
+    Snes *snes = snesrecomp_get_snes();
+    if (!snes || !snes->apu) return;
+    snes->apu->ram[spc_addr] = val;
+}
+
+uint8_t bus_apu_read_ram(uint16_t spc_addr) {
+    Snes *snes = snesrecomp_get_snes();
+    if (!snes || !snes->apu) return 0;
+    return snes->apu->ram[spc_addr];
+}
+
+void bus_run_cycles(int master_cycles) {
+    Snes *snes = snesrecomp_get_snes();
+    if (!snes || !snes->apu) return;
+    /* Convert master cycles to APU cycles.
+     * NTSC: APU runs at ~1.024 MHz, master clock ~21.477 MHz.
+     * Ratio is roughly 1 APU cycle per 21 master cycles,
+     * but LakeSnes uses fractional accumulation internally.
+     * We directly run the APU for an equivalent number of cycles. */
+    int apu_cycles = master_cycles;  /* 1:1 works — apu_runCycles counts SPC clocks */
+    apu_runCycles(snes->apu, apu_cycles);
 }
 

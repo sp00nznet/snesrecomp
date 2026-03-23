@@ -41,6 +41,27 @@ uint8_t *bus_get_wram(void);
 const uint8_t *bus_get_rom(uint32_t *size_out);
 
 /*
+ * Direct SPC700 RAM access — for fast bulk uploads that bypass the
+ * polled transfer protocol. Use this instead of the byte-by-byte
+ * echo handshake when uploading large blocks to the audio CPU.
+ */
+void     bus_apu_write_ram(uint16_t spc_addr, uint8_t val);
+uint8_t  bus_apu_read_ram(uint16_t spc_addr);
+
+/*
+ * Advance SNES master cycles — runs the SPC700 (and timers) forward.
+ *
+ * Recompiled code bypasses the normal CPU cycle counting, so polling loops
+ * that wait on APU port responses (e.g., the SPC700 IPL upload protocol)
+ * will deadlock unless you explicitly advance time.
+ *
+ * Call this inside tight polling loops that read APU ports ($2140-$2143).
+ * A reasonable value is 8-64 master cycles per iteration (one 65816
+ * instruction is typically 6-8 master cycles).
+ */
+void bus_run_cycles(int master_cycles);
+
+/*
  * Super FX / GSU access — for recompiled code that needs to interact
  * with the GSU coprocessor directly (e.g., writing R15 to start execution,
  * reading status flags, setting up screen parameters).
