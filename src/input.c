@@ -16,6 +16,7 @@ extern Snes *snesrecomp_get_snes(void);
 /* Per-port device type and mouse state */
 static int s_device_type[2] = { SNES_INPUT_JOYPAD, SNES_INPUT_JOYPAD };
 static SnesMouseState s_mouse[2];
+static SnesSuperScopeState s_scope;
 
 /* Accumulated mouse motion (reset each frame after latching) */
 static int s_mouse_accum_dx = 0;
@@ -28,12 +29,36 @@ void recomp_input_set_device(int port, int device_type) {
         memset(&s_mouse[port - 1], 0, sizeof(SnesMouseState));
         s_mouse[port - 1].speed = 2; /* default to fast sensitivity */
     }
+    if (device_type == SNES_INPUT_SUPERSCOPE && port == 2) {
+        memset(&s_scope, 0, sizeof(s_scope));
+        s_scope.offscreen = true;
+    }
+    /* Update LakeSnes device type */
+    Snes *snes = snesrecomp_get_snes();
+    if (snes) {
+        int lk_type = 1; /* inputDeviceController */
+        if (device_type == SNES_INPUT_MOUSE) lk_type = 2;
+        if (device_type == SNES_INPUT_SUPERSCOPE) lk_type = 3;
+        snes_setInputDevice(snes, port, lk_type);
+    }
 }
 
 SnesMouseState *recomp_input_get_mouse(int port) {
     if (port < 1 || port > 2) return NULL;
     if (s_device_type[port - 1] != SNES_INPUT_MOUSE) return NULL;
     return &s_mouse[port - 1];
+}
+
+SnesSuperScopeState *recomp_input_get_scope(void) {
+    if (s_device_type[1] != SNES_INPUT_SUPERSCOPE) return NULL;
+    return &s_scope;
+}
+
+void recomp_input_set_scope(uint16_t x, uint16_t y, uint8_t buttons) {
+    s_scope.x = x;
+    s_scope.y = y;
+    s_scope.buttons = buttons;
+    s_scope.offscreen = (x >= 256 || y >= 224);
 }
 
 /* Accumulate mouse motion from SDL events (called from platform layer) */
@@ -141,8 +166,12 @@ void recomp_input_update(void) {
         snes_setButtonState(snes, 1, SNES_BTN_IDX_SELECT, keys[SDL_SCANCODE_RSHIFT]);
     }
 
-    /* --- Port 2: always joypad for now --- */
-    /* (Can be extended to support mouse on port 2 if needed) */
+    /* --- Port 2 --- */
+    if (s_device_type[1] == SNES_INPUT_SUPERSCOPE) {
+        /* Super Scope: feed position and buttons into LakeSnes */
+        snes_setSuperScopeState(snes, s_scope.x, s_scope.y, s_scope.buttons);
+    }
+    /* (Port 2 joypad is handled by direct snes_setButtonState calls from recomp code) */
 }
 
 uint16_t recomp_input_read_joypad(int port) {
@@ -167,7 +196,7 @@ uint8_t recomp_input_serial_read(int port) {
         return ret;
     }
 
-    /* For joypad, delegate to LakeSnes */
+    /* For joypad and Super Scope, delegate to LakeSnes (handles serial protocol) */
     Snes *snes = snesrecomp_get_snes();
     if (!snes) return 0;
     if (port == 1) return input_read(snes->input1);

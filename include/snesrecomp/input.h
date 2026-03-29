@@ -42,8 +42,9 @@
 #define SNES_BTN_R       0x0010
 
 /* Input device types */
-#define SNES_INPUT_JOYPAD   0
-#define SNES_INPUT_MOUSE    1
+#define SNES_INPUT_JOYPAD        0
+#define SNES_INPUT_MOUSE         1
+#define SNES_INPUT_SUPERSCOPE    2
 
 /*
  * SNES Mouse state — tracks SDL mouse and converts to the SNES mouse
@@ -72,13 +73,45 @@ typedef struct {
 } SnesMouseState;
 
 /*
+ * Super Scope state — tracks aimed position and button state.
+ *
+ * The Super Scope connects to port 2 and uses:
+ *   - Serial data: 16-bit button/status word via $4017 / auto-read $421A
+ *   - PPU H/V counter latch: photodiode triggers counter capture
+ *
+ * Serial data format (auto-read $421A/$421B, bit 15 = first read):
+ *   Bits 15-12: Noise (1 when on-screen)
+ *   Bit 11:     Fire button
+ *   Bit 10:     Cursor button
+ *   Bit 9:      Turbo switch
+ *   Bit 8:      Pause button
+ *   Bit 7:      Offscreen flag
+ *   Bits 6-0:   Signature (0)
+ */
+typedef struct {
+    uint16_t x, y;      /* aimed position (0-255, 0-223) */
+    uint8_t  buttons;   /* bit 0=fire, 1=cursor, 2=turbo, 3=pause */
+    bool     offscreen; /* true when aiming outside visible area */
+} SnesSuperScopeState;
+
+/*
  * Set the input device type for a port (1 or 2).
- * Use SNES_INPUT_JOYPAD (default) or SNES_INPUT_MOUSE.
+ * Use SNES_INPUT_JOYPAD (default), SNES_INPUT_MOUSE, or SNES_INPUT_SUPERSCOPE.
+ * Note: Super Scope always uses port 2 per SNES hardware design.
  */
 void recomp_input_set_device(int port, int device_type);
 
 /* Get the mouse state for a port (returns NULL if port is not a mouse) */
 SnesMouseState *recomp_input_get_mouse(int port);
+
+/* Get the Super Scope state (returns NULL if port 2 is not a Super Scope) */
+SnesSuperScopeState *recomp_input_get_scope(void);
+
+/*
+ * Set Super Scope aim position and buttons directly.
+ * Convenience function — equivalent to modifying the state from get_scope().
+ */
+void recomp_input_set_scope(uint16_t x, uint16_t y, uint8_t buttons);
 
 /* Update keyboard/gamepad/mouse state and feed into LakeSnes input system */
 void recomp_input_update(void);
@@ -90,6 +123,7 @@ uint16_t recomp_input_read_joypad(int port);
  * Read the next serial bit from an input port (emulates $4016/$4017 reads).
  * For joypad: returns controller serial data.
  * For mouse: returns the full 32-bit mouse serial data bit-by-bit.
+ * For Super Scope: returns 16-bit button/status data bit-by-bit.
  */
 uint8_t recomp_input_serial_read(int port);
 

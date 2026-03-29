@@ -30,7 +30,7 @@ Static recompilation takes a console game's machine code and converts it into eq
 
 Every SNES game writes to the same PPU registers, the same APU ports, the same DMA channels. So why reimplement that for every single recomp project?
 
-**snesrecomp** solves this by packaging a real, battle-tested SNES emulator's hardware backend ([LakeSnes](https://github.com/angelo-wf/LakeSnes) by angelo-wf) as a linkable static library. Your recompiled code calls `bus_write8(bank, addr, val)` and gets real PPU behavior, real audio processing, real DMA transfers — all for free.
+**snesrecomp** solves this by packaging a real, battle-tested SNES emulator's hardware backend ([LakeSnes](https://github.com/sp00nznet/LakeSnes), forked from angelo-wf) as a linkable static library. Your recompiled code calls `bus_write8(bank, addr, val)` and gets real PPU behavior, real audio processing, real DMA transfers — all for free.
 
 This is the same approach used by [N64Recomp](https://github.com/N64Recomp/N64Recomp) (which uses parallel-rdp for graphics) and other successful recomp projects. **Chop up an emulator, turn the hardware into libraries, let game-specific projects link against them.**
 
@@ -47,7 +47,7 @@ This is the same approach used by [N64Recomp](https://github.com/N64Recomp/N64Re
 | **Memory Bus** | 24-bit address routing to all hardware | Adapter over LakeSnes |
 | **Function Table** | Hash-table dispatch for recompiled functions by SNES address | Recomp utility |
 | **Platform** | SDL2 window, renderer, audio output, frame timing | SDL2 |
-| **Input** | Joypad + SNES Mouse, keyboard/mouse mapping, hardware auto-read | SDL2 + LakeSnes |
+| **Input** | Joypad + SNES Mouse + Super Scope, keyboard/mouse mapping, hardware auto-read | SDL2 + LakeSnes |
 
 ## Quick Start
 

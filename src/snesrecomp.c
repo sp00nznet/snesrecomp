@@ -7,6 +7,8 @@
 
 #include "snesrecomp/snesrecomp.h"
 #include "snes.h"
+#include "ppu.h"
+#include "input.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -125,10 +127,29 @@ void snesrecomp_end_frame(void) {
 
     /* Start-of-frame PPU bookkeeping (toggles evenFrame, resets mosaic, etc.) */
     ppu_handleFrameStart(s_snes->ppu);
+    s_snes->input2->scopeLatched = false; /* reset Super Scope latch for new frame */
 
     /* Run all PPU scanlines for the frame */
     for (int line = 1; line <= 224; line++) {
         ppu_runLine(s_snes->ppu, line);
+
+        /*
+         * Super Scope beam detection: when the PPU renders the scanline
+         * the scope is aimed at, trigger a counter latch. This simulates
+         * the photodiode firing when the CRT beam passes the target.
+         * snes_runCycle() isn't used in recomp, so we do it here.
+         */
+        if (s_snes->input2->type == inputDeviceSuperScope &&
+            s_snes->ppuLatch && !s_snes->input2->scopeOffscreen &&
+            !s_snes->input2->scopeLatched) {
+            uint16_t targetV = s_snes->input2->scopeY + 1;
+            if ((uint16_t)line == targetV) {
+                s_snes->ppu->hCount = s_snes->input2->scopeX + 22;
+                s_snes->ppu->vCount = targetV;
+                s_snes->ppu->countersLatched = true;
+                s_snes->input2->scopeLatched = true;
+            }
+        }
     }
     ppu_handleVblank(s_snes->ppu);
 
