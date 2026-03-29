@@ -22,6 +22,7 @@ add_library(lakesnes_hw STATIC
     ${LAKESNES_DIR}/cpu.c
     ${LAKESNES_DIR}/dma.c
     ${LAKESNES_DIR}/dsp.c
+    ${LAKESNES_DIR}/dsp1.c
     ${LAKESNES_DIR}/input.c
     ${LAKESNES_DIR}/ppu.c
     ${LAKESNES_DIR}/snes.c

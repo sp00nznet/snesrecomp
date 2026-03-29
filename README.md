@@ -41,7 +41,7 @@ This is the same approach used by [N64Recomp](https://github.com/N64Recomp/N64Re
 | **PPU** | Full scanline rendering, Mode 0-7, sprites, windows, color math, hi-res | Real (LakeSnes) |
 | **APU/SPC700** | Full SPC700 CPU + BRR audio DSP, 8 channels, echo, noise | Real (LakeSnes) |
 | **DMA** | All 8 channels, GPDMA + HDMA, proper A-bus/B-bus routing | Real (LakeSnes) |
-| **Cartridge** | LoROM, HiROM, ExHiROM auto-detection, SRAM | Real (LakeSnes) |
+| **Cartridge** | LoROM, HiROM, ExHiROM auto-detection, SRAM, DSP-1 coprocessor | Real (LakeSnes) |
 | **CPU I/O** | NMI/IRQ, multiply/divide ALU, joypad auto-read | Real (LakeSnes) |
 | **CPU State** | 65816 register struct (A, X, Y, S, DP, DB, PB, flags) | Recomp adapter |
 | **Memory Bus** | 24-bit address routing to all hardware | Adapter over LakeSnes |
