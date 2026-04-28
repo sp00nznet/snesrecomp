@@ -26,8 +26,10 @@
 #define SNESRECOMP_H
 
 #include "cpu.h"
+#include "cpu_ops.h"
 #include "bus.h"
 #include "func_table.h"
+#include "recomp_patch.h"
 #include "platform.h"
 #include "input.h"
 

@@ -50,8 +50,11 @@ bool snesrecomp_init(const char *window_title, int scale) {
     /* Initialize recomp CPU state */
     recomp_cpu_reset();
 
-    /* Initialize function dispatch table */
-    func_table_init();
+    /* Note: func_table_init() is intentionally NOT called here.
+     * RECOMP_PATCH static constructors run before main() and populate the
+     * dispatch table; init() would wipe them. The table is zero-initialized
+     * by C static-storage semantics, so no explicit reset is needed.
+     * Call func_table_init() yourself only if you need to clear the table. */
 
     /* Initialize SDL2 platform */
     if (!platform_init(window_title, scale)) {
