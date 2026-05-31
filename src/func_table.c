@@ -53,9 +53,31 @@ snes_func_t func_table_lookup(uint32_t snes_addr) {
 }
 
 bool func_table_call(uint32_t snes_addr) {
-    snes_func_t fn = func_table_lookup(snes_addr);
-    if (fn) {
-        fn();
+    if (!recomp_interp_force()) {
+        snes_func_t fn = func_table_lookup(snes_addr);
+        if (fn) {
+            fn();
+            return true;
+        }
+    }
+    if (recomp_interp_enabled()) {
+        recomp_interp_call(snes_addr, /*is_long=*/true);
+        return true;
+    }
+    fprintf(stderr, "func_table: no function at $%06X\n", snes_addr);
+    return false;
+}
+
+bool func_table_call_jsr(uint32_t snes_addr) {
+    if (!recomp_interp_force()) {
+        snes_func_t fn = func_table_lookup(snes_addr);
+        if (fn) {
+            fn();
+            return true;
+        }
+    }
+    if (recomp_interp_enabled()) {
+        recomp_interp_call(snes_addr, /*is_long=*/false);
         return true;
     }
     fprintf(stderr, "func_table: no function at $%06X\n", snes_addr);

@@ -44,6 +44,7 @@ add_library(snesrecomp STATIC
     src/cpu.c
     src/bus.c
     src/func_table.c
+    src/recomp_interp.c
     src/platform_sdl.c
     src/input.c
 )

@@ -122,6 +122,12 @@ bool snesrecomp_begin_frame(void) {
     /* Update input and feed into LakeSnes */
     recomp_input_update();
 
+    /* Perform the auto-joypad read that real hardware does each vblank.
+     * snesrecomp bypasses the LakeSnes per-cycle CPU loop (where this would
+     * normally fire), so the auto-read registers $4218-$421F would otherwise
+     * never be populated and recompiled code would see no input. */
+    if (s_snes) snes_doAutoJoypad(s_snes);
+
     return true;
 }
 
