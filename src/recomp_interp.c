@@ -172,12 +172,21 @@ void recomp_interp_call(uint32_t snes_addr, bool is_long) {
     c->k  = (snes_addr >> 16) & 0xFF;
     c->pc = (uint16_t)snes_addr;
 
+    /* Optional control-flow trace: record (k:pc) before each opcode in a ring
+     * buffer and dump the tail on abort, to locate runaway loops. */
+    static int trace_on = -1;
+    if (trace_on < 0) trace_on = getenv("SMK_INTERP_TRACE") ? 1 : 0;
+    enum { TRC = 64 };
+    static uint32_t trc[TRC];
+    int trci = 0;
+
     long ops = 0;
     bool aborted = false;
     /* Run until the stack unwinds back to (or past) the entry level. Using a
      * signed difference handles the exact-return case (== 0) and any overshoot
      * (< 0) without a separate check. */
     while ((int16_t)(start_sp - c->sp) > 0) {
+        if (trace_on) { trc[trci % TRC] = ((uint32_t)c->k << 16) | c->pc; trci++; }
         cpu_runOpcode(c);
         if (c->waiting || c->stopped) {
             fprintf(stderr, "recomp_interp: $%06X executed WAI/STP — aborting "
@@ -190,6 +199,15 @@ void recomp_interp_call(uint32_t snes_addr, bool is_long) {
                             "(sp=%04X start=%04X pc=%02X:%04X) — aborting\n",
                     snes_addr, (long)INTERP_MAX_OPS, c->sp, start_sp, c->k, c->pc);
             aborted = true;
+            if (trace_on) {
+                fprintf(stderr, "  trace (last %d opcodes, oldest first):\n", TRC);
+                int start = (trci > TRC) ? (trci - TRC) : 0;
+                for (int i = start; i < trci; i++) {
+                    fprintf(stderr, " %06X", trc[i % TRC]);
+                    if ((i - start) % 12 == 11) fprintf(stderr, "\n");
+                }
+                fprintf(stderr, "\n");
+            }
             break;
         }
     }
