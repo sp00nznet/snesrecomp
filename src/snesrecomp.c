@@ -187,6 +187,29 @@ void snesrecomp_end_frame(void) {
      * never apply — e.g. SMK's track plane never enters Mode 7. */
     if (s_snes->dma) dma_hdmaInitFrame(s_snes->dma);
 
+    /* Diagnostic: when SMK_HDMA_DEBUG is set, on the first Mode-7 frame report
+     * which registers the active HDMA channels target and CGRAM before/after
+     * the scanline loop. Used to confirm whether per-scanline HDMA clobbers the
+     * Mode-7 palette (CGRAM). One-shot. */
+    static int s_hdma_dbg_done = 0;
+    int hdma_dbg = getenv("SMK_HDMA_DEBUG") && !s_hdma_dbg_done &&
+                   s_snes->ppu->mode == 7;
+    if (hdma_dbg) {
+        s_hdma_dbg_done = 1;
+        fprintf(stderr, "[HDMA_DEBUG] mode=7 frame, active HDMA channels:\n");
+        for (int c = 0; c < 8; c++) {
+            if (s_snes->dma->channel[c].hdmaActive)
+                fprintf(stderr, "  ch%d -> $21%02X (mode=%d aBank=%02X aAdr=%04X)\n",
+                        c, s_snes->dma->channel[c].bAdr,
+                        s_snes->dma->channel[c].mode,
+                        s_snes->dma->channel[c].aBank,
+                        s_snes->dma->channel[c].aAdr);
+        }
+        fprintf(stderr, "  CGRAM[0..7] BEFORE scanline HDMA: ");
+        for (int i = 0; i < 8; i++) fprintf(stderr, "%04X ", s_snes->ppu->cgram[i]);
+        fprintf(stderr, "\n");
+    }
+
     /* Run all PPU scanlines for the frame */
     for (int line = 1; line <= 224; line++) {
         /* Apply this scanline's HDMA register writes before rendering it
@@ -213,6 +236,12 @@ void snesrecomp_end_frame(void) {
         }
     }
     ppu_handleVblank(s_snes->ppu);
+
+    if (hdma_dbg) {
+        fprintf(stderr, "  CGRAM[0..7] AFTER  scanline HDMA: ");
+        for (int i = 0; i < 8; i++) fprintf(stderr, "%04X ", s_snes->ppu->cgram[i]);
+        fprintf(stderr, "\n");
+    }
 
     /* Copy rendered pixels from PPU internal buffer to output buffer */
     snes_setPixels(s_snes, s_pixel_buf);

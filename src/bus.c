@@ -15,6 +15,8 @@
 
 #include <string.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 /* Access to the LakeSnes instance (owned by snesrecomp.c) */
 extern Snes *snesrecomp_get_snes(void);
@@ -33,6 +35,13 @@ void bus_write8(uint8_t bank, uint16_t addr, uint8_t val) {
     uint32_t flat = ((uint32_t)bank << 16) | addr;
     snes_write(snes, flat, val);
 
+    /* Diagnostic: count/trace ALL CGRAM-data writes (CPU interp + recompiled C
+     * both pass through here), to find non-interpreter CGRAM writers. */
+    if (addr == 0x2122 && getenv("SMK_CG_DEBUG")) {
+        static int n = 0;
+        fprintf(stderr, "[CG] #%d $2122 <- %02X (bank=%02X)\n", n++, val, bank);
+    }
+
     /* DMA fix: LakeSnes uses a 2-step state machine for DMA:
      *   Step 1: dmaState 1→2 (arm)
      *   Step 2: dmaState 2→0 (execute transfer)
@@ -40,6 +49,17 @@ void bus_write8(uint8_t bank, uint16_t addr, uint8_t val) {
      * Since recompiled code bypasses the CPU, we call handleDma twice
      * to complete both steps immediately. */
     if (addr == 0x420B || addr == 0x420C) {
+        /* Diagnostic: log GPDMA channel params (esp. CGRAM-targeting) so the
+         * race-start palette-corrupting transfer can be identified. */
+        if (addr == 0x420B && getenv("SMK_DMA_DEBUG")) {
+            for (int c = 0; c < 8; c++) {
+                if (!(val & (1 << c))) continue;
+                fprintf(stderr, "[DMA] ch%d $420B=%02X -> $21%02X  src=%02X:%04X size=%04X mode=%d\n",
+                        c, val, snes->dma->channel[c].bAdr,
+                        snes->dma->channel[c].aBank, snes->dma->channel[c].aAdr,
+                        snes->dma->channel[c].size, snes->dma->channel[c].mode);
+            }
+        }
         dma_handleDma(snes->dma, 8);  /* state 1→2 (arm) */
         dma_handleDma(snes->dma, 8);  /* state 2→0 (execute) */
     }
