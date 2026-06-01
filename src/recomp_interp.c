@@ -66,9 +66,29 @@ static void apu_catchup_if_port(Snes *snes, uint32_t adr) {
     }
 }
 
+/* Advance the PPU H/V scan position when interpreted code polls the H/V-blank
+ * status register ($4212/HVBJOY). Untimed interpretation never steps the PPU,
+ * so hPos/vPos stay frozen and a "wait for HBlank/VBlank" spin-loop would never
+ * exit. We bump the position directly (NOT via snes_runCycle, which would render
+ * scanlines and fire NMI) so the blank flags cycle and the wait completes.
+ * $4212: bit6 HBlank = (hPos<4 || hPos>=1096), bit7 VBlank = inVblank. */
+static void ppu_status_advance(Snes *snes, uint32_t adr) {
+    if ((uint16_t)adr != 0x4212) return;
+    snes->hPos += 192;
+    if (snes->hPos >= 1364) {
+        snes->hPos -= 1364;
+        snes->vPos++;
+        if (snes->vPos >= 262) snes->vPos = 0;
+        snes->inVblank = (snes->vPos >= 225);
+    }
+}
+
 static uint8_t interp_read(void *mem, uint32_t adr) {
     Snes *snes = (Snes *)mem;
-    if (snes) apu_catchup_if_port(snes, adr);
+    if (snes) {
+        apu_catchup_if_port(snes, adr);
+        ppu_status_advance(snes, adr);
+    }
     return bus_read8((uint8_t)(adr >> 16), (uint16_t)adr);
 }
 
