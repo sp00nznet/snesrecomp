@@ -33,6 +33,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 extern Snes *snesrecomp_get_snes(void);
 
@@ -241,7 +242,33 @@ void recomp_interp_call(uint32_t snes_addr, bool is_long) {
     /* Run until the stack unwinds back to (or past) the entry level. Using a
      * signed difference handles the exact-return case (== 0) and any overshoot
      * (< 0) without a separate check. */
+    /* DMA-register guard across interrupts taken DURING an interpreted routine.
+     *
+     * snesrecomp doesn't advance PPU timing in interp, but interpreted writes to
+     * $4200/$4207-$420A can still latch irqWanted, so an IRQ/NMI may be serviced
+     * mid-routine. The handler can re-enter game code that programs DMA channel 0
+     * (e.g. SMK's OBJ-palette CGRAM upload) — which on real hardware is harmless
+     * because the interrupt fires at a different cycle, but here lands in the
+     * MIDDLE of another routine's DMA-flush loop and leaves the channel's B-bus
+     * address pointing at CGRAM. The resumed flush then DMAs VRAM tile data into
+     * CGRAM, corrupting the Mode-7 race palette.
+     *
+     * Rather than suppress the interrupt (which would drop its legitimate work),
+     * snapshot the DMA channel state when an interrupt is taken and restore it
+     * once the handler's RTI unwinds the stack back. The interrupt's own DMAs
+     * already executed (writing CGRAM/VRAM) before the restore, so they stick;
+     * only the channel *registers* are rewound so the interrupted loop resumes
+     * with the setup it had. */
+    DmaChannel saved_dma[8];
+    bool dma_guard_pending = false;
+    uint16_t dma_guard_sp = 0;
+
     while ((int16_t)(start_sp - c->sp) > 0) {
+        if (c->intWanted && !dma_guard_pending) {
+            memcpy(saved_dma, snes->dma->channel, sizeof(saved_dma));
+            dma_guard_sp = c->sp;       /* RTI will return SP to here */
+            dma_guard_pending = true;
+        }
         if (trace_on) { trc[trci % TRC] = ((uint32_t)c->k << 16) | c->pc; trci++; }
         if (trace_exec >= 0 && (((uint32_t)c->k << 16) | c->pc) == (uint32_t)trace_exec) {
             uint16_t sp = c->sp;
@@ -251,6 +278,13 @@ void recomp_interp_call(uint32_t snes_addr, bool is_long) {
                     (long)trace_exec, sp, ret, (uint16_t)(ret - 2), snes_addr);
         }
         cpu_runOpcode(c);
+        /* Once the interrupt handler's RTI has unwound the stack back to (or
+         * above) the pre-interrupt level, restore the DMA channel registers the
+         * interrupted routine had programmed. */
+        if (dma_guard_pending && (int16_t)(c->sp - dma_guard_sp) >= 0) {
+            memcpy(snes->dma->channel, saved_dma, sizeof(saved_dma));
+            dma_guard_pending = false;
+        }
         if (c->waiting || c->stopped) {
             fprintf(stderr, "recomp_interp: $%06X executed WAI/STP — aborting "
                             "(this routine likely waits on NMI)\n", snes_addr);
