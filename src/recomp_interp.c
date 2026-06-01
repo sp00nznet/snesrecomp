@@ -227,6 +227,15 @@ void recomp_interp_call(uint32_t snes_addr, bool is_long) {
     static uint32_t trc[TRC];
     int trci = 0;
 
+    /* Optional exec trace: when PC reaches SMK_TRACE_EXEC=<24-bit hex>, log the
+     * caller's return address off the stack (works for routines reached via
+     * indirect dispatch that static xref can't find). */
+    static long trace_exec = -2;
+    if (trace_exec == -2) {
+        const char *te = getenv("SMK_TRACE_EXEC");
+        trace_exec = te ? strtol(te, NULL, 16) : -1;
+    }
+
     long ops = 0;
     bool aborted = false;
     /* Run until the stack unwinds back to (or past) the entry level. Using a
@@ -234,6 +243,13 @@ void recomp_interp_call(uint32_t snes_addr, bool is_long) {
      * (< 0) without a separate check. */
     while ((int16_t)(start_sp - c->sp) > 0) {
         if (trace_on) { trc[trci % TRC] = ((uint32_t)c->k << 16) | c->pc; trci++; }
+        if (trace_exec >= 0 && (((uint32_t)c->k << 16) | c->pc) == (uint32_t)trace_exec) {
+            uint16_t sp = c->sp;
+            uint16_t ret = bus_read8(0x00, (sp + 1) & 0xFFFF) |
+                           (bus_read8(0x00, (sp + 2) & 0xFFFF) << 8);
+            fprintf(stderr, "TRACE_EXEC $%06lX hit: sp=%04X ret=%04X (caller~%04X) entry-routine=$%06X\n",
+                    (long)trace_exec, sp, ret, (uint16_t)(ret - 2), snes_addr);
+        }
         cpu_runOpcode(c);
         if (c->waiting || c->stopped) {
             fprintf(stderr, "recomp_interp: $%06X executed WAI/STP — aborting "
