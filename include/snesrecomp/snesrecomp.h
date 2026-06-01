@@ -88,6 +88,13 @@ uint16_t snesrecomp_read_vram(uint16_t word_addr);
 void snesrecomp_dump_ppu(const char *filepath);
 
 /*
+ * Dump a compact binary snapshot of guest WRAM + VRAM for lockstep
+ * divergence analysis (see tools/diff_snapshots.py). Used to compare a
+ * pure-interpreter reference run against a recompiled run frame-by-frame.
+ */
+void snesrecomp_dump_snapshot(const char *filepath);
+
+/*
  * Clean shutdown — frees all SNES hardware and closes SDL2.
  */
 void snesrecomp_shutdown(void);

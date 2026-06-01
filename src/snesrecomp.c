@@ -33,6 +33,38 @@ uint16_t snesrecomp_read_vram(uint16_t word_addr) {
     return s_snes->ppu->vram[word_addr & 0x7FFF];
 }
 
+/*
+ * Dump a compact binary snapshot of guest state (WRAM + VRAM) for lockstep
+ * divergence analysis. Modeled on the snesrev zelda3 verification harness:
+ * run the same ROM under two execution paths (pure interpreter as the
+ * ground-truth reference vs. recompiled functions), snapshot every frame,
+ * and diff to find the first WRAM/VRAM address that diverges — i.e. the
+ * first incorrect recompiled function.
+ *
+ * Format (little-endian, matches the x86 host):
+ *   char  magic[8]  = "SMKSNAP1"
+ *   u32   wram_size = 0x20000
+ *   u32   vram_size = 0x10000   (bytes; 0x8000 words)
+ *   u8    wram[wram_size]
+ *   u8    vram[vram_size]       (raw uint16 array, low byte first)
+ */
+void snesrecomp_dump_snapshot(const char *filepath) {
+    if (!s_snes || !s_snes->ppu) return;
+    FILE *f = fopen(filepath, "wb");
+    if (!f) {
+        fprintf(stderr, "snesrecomp: failed to open snapshot '%s'\n", filepath);
+        return;
+    }
+    const uint32_t wram_size = 0x20000;
+    const uint32_t vram_size = 0x10000; /* 0x8000 words * 2 bytes */
+    fwrite("SMKSNAP1", 1, 8, f);
+    fwrite(&wram_size, sizeof(uint32_t), 1, f);
+    fwrite(&vram_size, sizeof(uint32_t), 1, f);
+    fwrite(s_snes->ram, 1, wram_size, f);
+    fwrite(s_snes->ppu->vram, 1, vram_size, f);
+    fclose(f);
+}
+
 bool snesrecomp_init(const char *window_title, int scale) {
     /* Create LakeSnes instance (allocates CPU, PPU, APU, DMA, Cart) */
     s_snes = snes_init();
