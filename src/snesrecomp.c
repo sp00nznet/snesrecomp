@@ -138,8 +138,18 @@ void snesrecomp_end_frame(void) {
     ppu_handleFrameStart(s_snes->ppu);
     s_snes->input2->scopeLatched = false; /* reset Super Scope latch for new frame */
 
+    /* Initialize HDMA for this frame. snesrecomp renders scanlines manually and
+     * never steps the per-cycle CPU loop where LakeSnes normally runs HDMA, so
+     * we drive it here (untimed). Without this, per-scanline register effects
+     * (Mode-7 BGMODE switching, matrix updates, window/color raster effects)
+     * never apply — e.g. SMK's track plane never enters Mode 7. */
+    if (s_snes->dma) dma_hdmaInitFrame(s_snes->dma);
+
     /* Run all PPU scanlines for the frame */
     for (int line = 1; line <= 224; line++) {
+        /* Apply this scanline's HDMA register writes before rendering it
+         * (real hardware does HDMA during the preceding HBlank). */
+        if (s_snes->dma) dma_hdmaRunLine(s_snes->dma);
         ppu_runLine(s_snes->ppu, line);
 
         /*

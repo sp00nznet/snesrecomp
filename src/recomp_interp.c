@@ -92,8 +92,24 @@ static uint8_t interp_read(void *mem, uint32_t adr) {
     return bus_read8((uint8_t)(adr >> 16), (uint16_t)adr);
 }
 
+/* Optional debug: log interpreted writes to a watched address (SMK_WATCH_REG=<hex>,
+ * matched on the low 16 bits) with the originating PC. */
+static int s_watch_reg = -2;  /* -2 = unread, -1 = disabled */
+
 static void interp_write(void *mem, uint32_t adr, uint8_t val) {
     Snes *snes = (Snes *)mem;
+    if (s_watch_reg == -2) {
+        const char *w = getenv("SMK_WATCH_REG");
+        s_watch_reg = w ? (int)strtol(w, NULL, 16) : -1;
+    }
+    /* Only flag true I/O accesses: $21xx etc. are registers only in banks with
+     * bit6 clear ($00-3F / $80-BF); in $7E/$7F (and ROM banks) the same low
+     * address is WRAM/ROM, not the register. */
+    if (s_watch_reg >= 0 && (uint16_t)adr == (uint16_t)s_watch_reg &&
+        (((adr >> 16) & 0x40) == 0) && snes && snes->cpu) {
+        fprintf(stderr, "WR $%04X <- %02X  pc=%02X:%04X\n",
+                (uint16_t)adr, val, snes->cpu->k, snes->cpu->pc);
+    }
     if (snes) apu_catchup_if_port(snes, adr);
     bus_write8((uint8_t)(adr >> 16), (uint16_t)adr, val);
 }
