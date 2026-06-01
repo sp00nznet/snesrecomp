@@ -42,6 +42,21 @@ void bus_write8(uint8_t bank, uint16_t addr, uint8_t val) {
         fprintf(stderr, "[CG] #%d $2122 <- %02X (bank=%02X)\n", n++, val, bank);
     }
 
+    /* Diagnostic: trace the DMA channel-0 SETUP registers + trigger with the
+     * CPU PC, to see whether the game performs per-DMA setup ($4302 srcL,
+     * $4303 srcH, $4304 srcBank, $4305/6 size, $2121 CGADD) before each $420B,
+     * or fires $420B with stale channel regs (race-start palette bug). */
+    if (getenv("SMK_DMASETUP_DEBUG")) {
+        uint16_t pc = (snes->cpu ? snes->cpu->pc : 0);
+        uint8_t  k  = (snes->cpu ? snes->cpu->k : 0);
+        if (addr == 0x2121 || addr == 0x4300 || addr == 0x4301 ||
+            addr == 0x4302 || addr == 0x4303 ||
+            addr == 0x4304 || addr == 0x4305 || addr == 0x4306 ||
+            addr == 0x420B)
+            fprintf(stderr, "[SET] $%04X <- %02X  pc=%02X:%04X\n",
+                    addr, val, k, pc);
+    }
+
     /* DMA fix: LakeSnes uses a 2-step state machine for DMA:
      *   Step 1: dmaState 1→2 (arm)
      *   Step 2: dmaState 2→0 (execute transfer)
