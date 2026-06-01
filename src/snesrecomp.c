@@ -42,11 +42,18 @@ uint16_t snesrecomp_read_vram(uint16_t word_addr) {
  * first incorrect recompiled function.
  *
  * Format (little-endian, matches the x86 host):
- *   char  magic[8]  = "SMKSNAP1"
+ *   char  magic[8]  = "SMKSNAP2"
  *   u32   wram_size = 0x20000
  *   u32   vram_size = 0x10000   (bytes; 0x8000 words)
+ *   u32   cgram_size = 0x200    (bytes; 0x100 words)
  *   u8    wram[wram_size]
  *   u8    vram[vram_size]       (raw uint16 array, low byte first)
+ *   u8    cgram[cgram_size]     (raw uint16 array, low byte first)
+ *
+ * CGRAM is included because Mode-7 BG1 garbling can be a palette fault as
+ * easily as a char-data fault; comparing both against a Mesen2 reference dump
+ * (tools/mesen/dump_snapshot.lua emits this exact format) isolates which.
+ * The diff tool still reads the older "SMKSNAP1" (no cgram) for back-compat.
  */
 void snesrecomp_dump_snapshot(const char *filepath) {
     if (!s_snes || !s_snes->ppu) return;
@@ -56,12 +63,15 @@ void snesrecomp_dump_snapshot(const char *filepath) {
         return;
     }
     const uint32_t wram_size = 0x20000;
-    const uint32_t vram_size = 0x10000; /* 0x8000 words * 2 bytes */
-    fwrite("SMKSNAP1", 1, 8, f);
+    const uint32_t vram_size = 0x10000;  /* 0x8000 words * 2 bytes */
+    const uint32_t cgram_size = 0x200;   /* 0x100 words * 2 bytes */
+    fwrite("SMKSNAP2", 1, 8, f);
     fwrite(&wram_size, sizeof(uint32_t), 1, f);
     fwrite(&vram_size, sizeof(uint32_t), 1, f);
+    fwrite(&cgram_size, sizeof(uint32_t), 1, f);
     fwrite(s_snes->ram, 1, wram_size, f);
     fwrite(s_snes->ppu->vram, 1, vram_size, f);
+    fwrite(s_snes->ppu->cgram, 1, cgram_size, f);
     fclose(f);
 }
 
