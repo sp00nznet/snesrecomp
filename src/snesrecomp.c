@@ -210,6 +210,10 @@ void snesrecomp_dump_ppu(const char *filepath) {
     if (!ppu) { fclose(dbg); return; }
     fprintf(dbg, "forcedBlank=%d brightness=%d mode=%d evenFrame=%d\n",
            ppu->forcedBlank, ppu->brightness, ppu->mode, ppu->evenFrame);
+    fprintf(dbg, "M7 matrix a=%d b=%d c=%d d=%d x=%d y=%d h=%d v=%d  startX=%d startY=%d sel=%d extBg=%d\n",
+           ppu->m7matrix[0], ppu->m7matrix[1], ppu->m7matrix[2], ppu->m7matrix[3],
+           ppu->m7matrix[4], ppu->m7matrix[5], ppu->m7matrix[6], ppu->m7matrix[7],
+           ppu->m7startX, ppu->m7startY, ppu->m7largeField, ppu->m7extBg);
     fprintf(dbg, "layer mainScreenEnabled: %d %d %d %d %d\n",
            ppu->layer[0].mainScreenEnabled, ppu->layer[1].mainScreenEnabled,
            ppu->layer[2].mainScreenEnabled, ppu->layer[3].mainScreenEnabled,
