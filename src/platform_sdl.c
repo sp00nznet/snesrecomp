@@ -140,9 +140,16 @@ void platform_present_frame(const uint8_t *framebuffer) {
     SDL_GetRendererOutputSize(s_renderer, &out_w, &out_h);
     SDL_Rect dst = { 0, menu_h, out_w, out_h - menu_h };
 
+    /* Clear to the menu-bar colour so the strip above the game (which the ImGui
+     * menu bar doesn't fully paint) blends with the menu instead of showing
+     * black. Falls back to black when the menu is disabled. */
+    int br = 0, bg = 0, bb = 0;
+    if (menu_h > 0) menu_overlay_get_bar_color(&br, &bg, &bb);
+    SDL_SetRenderDrawColor(s_renderer, (Uint8)br, (Uint8)bg, (Uint8)bb, 255);
     SDL_RenderClear(s_renderer);
     SDL_RenderCopy(s_renderer, s_texture, &src, &dst);
     menu_overlay_render(s_renderer);   /* ImGui menu on top (no-op when disabled) */
+    SDL_SetRenderDrawColor(s_renderer, 0, 0, 0, 255);   /* restore */
     SDL_RenderPresent(s_renderer);
 }
 

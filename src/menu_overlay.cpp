@@ -193,7 +193,7 @@ static void apply_theme(void) {
     s.FrameRounding  = 3.0f;
     s.GrabRounding   = 3.0f;
     ImVec4 *c = s.Colors;
-    c[ImGuiCol_MenuBarBg]     = ImVec4(0.10f, 0.12f, 0.16f, 0.95f);
+    c[ImGuiCol_MenuBarBg]     = ImVec4(0.10f, 0.12f, 0.16f, 1.00f);  /* opaque (matches frame clear) */
     c[ImGuiCol_Header]        = ImVec4(0.20f, 0.45f, 0.85f, 0.65f);
     c[ImGuiCol_HeaderHovered] = ImVec4(0.25f, 0.55f, 0.95f, 0.80f);
 }
@@ -462,6 +462,14 @@ extern "C" int menu_overlay_is_active(void) {
     return (g.rebind_btn >= 0 || io.WantCaptureKeyboard || io.WantCaptureMouse) ? 1 : 0;
 }
 extern "C" int   menu_overlay_get_menubar_height(void) { return g.enabled ? g.menubar_h : 0; }
+extern "C" void  menu_overlay_get_bar_color(int *r, int *gg, int *b) {
+    /* The MenuBarBg colour (so the platform can clear the frame to it — any strip
+     * the menu bar doesn't paint then matches the menu instead of going black). */
+    if (g.enabled) {
+        ImVec4 c = ImGui::GetStyle().Colors[ImGuiCol_MenuBarBg];
+        *r = (int)(c.x * 255 + 0.5f); *gg = (int)(c.y * 255 + 0.5f); *b = (int)(c.z * 255 + 0.5f);
+    } else { *r = 0; *gg = 0; *b = 0; }
+}
 extern "C" int   menu_overlay_quit_requested(void) { return g.quit_requested; }
 extern "C" int   menu_overlay_take_reset(void)      { int r = g.reset_req; g.reset_req = false; return r; }
 extern "C" int   menu_overlay_take_save_state(void) { int r = g.save_req;  g.save_req  = false; return r; }

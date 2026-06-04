@@ -40,6 +40,10 @@ int  menu_overlay_is_active(void);
  * platform renders the game below this so the menu never covers the HUD. */
 int  menu_overlay_get_menubar_height(void);
 
+/* Menu-bar background colour (0-255 RGB; 0,0,0 when disabled). The platform
+ * clears the frame to this so any strip the bar doesn't paint matches the menu. */
+void menu_overlay_get_bar_color(int *r, int *g, int *b);
+
 /* Set by File -> Quit. */
 int  menu_overlay_quit_requested(void);
 

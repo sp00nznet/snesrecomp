@@ -12,6 +12,7 @@ int   menu_overlay_process_event(const void *e) { (void)e; return 0; }
 void  menu_overlay_render(struct SDL_Renderer *r) { (void)r; }
 int   menu_overlay_is_active(void) { return 0; }
 int   menu_overlay_get_menubar_height(void) { return 0; }
+void  menu_overlay_get_bar_color(int *r, int *g, int *b) { *r = 0; *g = 0; *b = 0; }
 int   menu_overlay_quit_requested(void) { return 0; }
 int   menu_overlay_take_reset(void) { return 0; }
 int   menu_overlay_take_save_state(void) { return 0; }
