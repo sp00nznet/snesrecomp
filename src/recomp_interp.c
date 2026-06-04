@@ -356,7 +356,69 @@ void recomp_timed_add_intercept(uint32_t snes_addr, bool is_long) {
 
 unsigned long recomp_timed_intercept_hits(void) { return s_intercept_hits; }
 
+/* Redirect protocol: an intercepted function whose original ends in a JMP/JML
+ * (not RTS/RTL) calls recomp_set_redirect(target) instead of returning; the
+ * hook then sets PB:PC to the target (no stack pop), matching the jump. */
+static uint32_t s_redirect = 0xFFFFFFFFu;   /* sentinel = no redirect */
+void recomp_set_redirect(uint32_t snes_addr) { s_redirect = snes_addr; }
+
+/* --- Call-target profiler (Phase-3 target finding) -----------------------
+ * When enabled, tallies the target of every direct JSR/JSL the timed CPU
+ * executes, so the hottest leaves (best recompilation targets) can be ranked.
+ * Indirect dispatch (JSR ($table,x)) is not target-resolvable here and is
+ * skipped — leaves are virtually always called directly. */
+typedef struct { uint32_t addr; unsigned long count; } CallTally;
+static CallTally s_tally[8192];
+static int       s_tally_n  = 0;
+static bool      s_profile  = false;
+
+void recomp_timed_profile_enable(void) { s_profile = true; }
+
+static void tally_call(uint32_t target) {
+    for (int i = 0; i < s_tally_n; i++)
+        if (s_tally[i].addr == target) {
+            s_tally[i].count++;
+            if (i > 0) {  /* move-to-front: keep hot targets cheap to find */
+                CallTally t = s_tally[i]; s_tally[i] = s_tally[i - 1]; s_tally[i - 1] = t;
+            }
+            return;
+        }
+    if (s_tally_n < (int)(sizeof(s_tally) / sizeof(s_tally[0]))) {
+        s_tally[s_tally_n].addr = target;
+        s_tally[s_tally_n].count = 1;
+        s_tally_n++;
+    }
+}
+
+void recomp_timed_profile_dump(int top) {
+    fprintf(stderr, "=== timed-recomp call profile: %d distinct JSR/JSL targets ===\n", s_tally_n);
+    for (int k = 0; k < top; k++) {
+        int best = -1; unsigned long bc = 0;
+        for (int i = 0; i < s_tally_n; i++)
+            if (s_tally[i].count > bc) { bc = s_tally[i].count; best = i; }
+        if (best < 0) break;
+        fprintf(stderr, "  $%06X  x%-8lu%s\n", s_tally[best].addr, s_tally[best].count,
+                func_table_lookup(s_tally[best].addr) ? " [recompiled]" : "");
+        s_tally[best].count = 0;  /* consume so the next pass finds the next-highest */
+    }
+}
+
 static bool timed_recomp_hook(Cpu *c) {
+    if (s_profile) {
+        uint8_t op = bus_read8(c->k, c->pc);
+        if (op == 0x20) {  /* JSR abs (near) */
+            uint32_t t = ((uint32_t)c->k << 16)
+                       | bus_read8(c->k, c->pc + 1)
+                       | ((uint32_t)bus_read8(c->k, c->pc + 2) << 8);
+            tally_call(t);
+        } else if (op == 0x22) {  /* JSL long */
+            uint32_t t = bus_read8(c->k, c->pc + 1)
+                       | ((uint32_t)bus_read8(c->k, c->pc + 2) << 8)
+                       | ((uint32_t)bus_read8(c->k, c->pc + 3) << 16);
+            tally_call(t);
+        }
+    }
+
     uint32_t pc = ((uint32_t)c->k << 16) | (uint16_t)c->pc;
     const TimedIntercept *e = NULL;
     for (int i = 0; i < s_intercept_count; i++)
@@ -374,8 +436,19 @@ static bool timed_recomp_hook(Cpu *c) {
     }
 
     sync_from_lake(c);   /* LakeSnes CPU regs -> g_cpu (native body reads these) */
+    s_redirect = 0xFFFFFFFFu;
     fn();                /* run recompiled native body (g_cpu + recomp bus) */
     sync_to_lake(c);     /* g_cpu -> LakeSnes CPU regs */
+
+    /* JMP/JML exit: the function redirected instead of returning. Set PB:PC to
+     * the target without popping the stack (matches the original jump). */
+    if (s_redirect != 0xFFFFFFFFu) {
+        c->pc = (uint16_t)s_redirect;
+        c->k  = (uint8_t)(s_redirect >> 16);
+        s_redirect = 0xFFFFFFFFu;
+        s_intercept_hits++;
+        return true;
+    }
 
     /* Optional cycle accounting: advance the timed clock by the original
      * routine's non-DMA instruction cycles, which running the native body

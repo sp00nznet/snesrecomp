@@ -75,4 +75,14 @@ void          recomp_timed_recomp_enable(void);
 void          recomp_timed_recomp_disable(void);
 unsigned long recomp_timed_intercept_hits(void);
 
+/* Call-target profiler: rank the hottest direct JSR/JSL targets (best
+ * recompilation candidates). Enable before the run; dump the top-N at the end. */
+void recomp_timed_profile_enable(void);
+void recomp_timed_profile_dump(int top);
+
+/* For an intercepted recompiled function whose original ends in JMP/JML rather
+ * than RTS/RTL: call this from the body instead of returning normally, and the
+ * timed-recomp hook will transfer control to snes_addr (no stack pop). */
+void recomp_set_redirect(uint32_t snes_addr);
+
 #endif /* SNESRECOMP_FUNC_TABLE_H */
