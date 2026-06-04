@@ -261,6 +261,30 @@ void snesrecomp_end_frame(void) {
     platform_frame_sync();
 }
 
+/* ---- Real-frame path ----
+ * Runs the genuine ROM via LakeSnes's full cycle-accurate frame (CPU + NMI +
+ * per-scanline HDMA + PPU, real timing) — identical to how tools/lakesnes_ref
+ * renders. Use this to play gameplay the recomp's per-frame shells can't yet
+ * drive (the Mode-7 race's multi-frame init / fade-in never completes under the
+ * shells, which drop the vblank waits the init loops on). No recomp boot chain
+ * or NMI/main shells are involved; snes->cpu boots from the reset vector on the
+ * first call. Mirrors begin_frame/end_frame so main.c can swap modes. */
+bool snesrecomp_realframe_begin(void) {
+    if (!platform_poll_events()) return false;
+    recomp_input_update();
+    return true;
+}
+
+void snesrecomp_realframe_end(void) {
+    if (!s_snes) return;
+    snes_runFrame(s_snes);
+    snes_setPixels(s_snes, s_pixel_buf);
+    snes_setSamples(s_snes, s_audio_buf, SAMPLES_PER_FRAME);
+    platform_present_frame(s_pixel_buf);
+    platform_queue_audio(s_audio_buf, SAMPLES_PER_FRAME);
+    platform_frame_sync();
+}
+
 void snesrecomp_trigger_vblank(void) {
     if (!s_snes) return;
     s_snes->inVblank = true;

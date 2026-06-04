@@ -66,6 +66,16 @@ bool snesrecomp_begin_frame(void);
 void snesrecomp_end_frame(void);
 
 /*
+ * Real-frame path — run the genuine ROM via LakeSnes's full cycle-accurate
+ * frame (renders everything, incl. the Mode-7 race, like tools/lakesnes_ref).
+ * Use instead of begin_frame/recompiled-shells/end_frame to play gameplay the
+ * recomp's per-frame shells can't yet drive. begin polls input (returns false
+ * on quit); end runs the frame and presents.
+ */
+bool snesrecomp_realframe_begin(void);
+void snesrecomp_realframe_end(void);
+
+/*
  * Trigger VBlank processing — NMI flag, PPU vblank handling.
  * Call this when your recompiled code reaches the NMI/VBlank point.
  */
