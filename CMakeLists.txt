@@ -73,6 +73,7 @@ add_library(snesrecomp STATIC
     src/recomp_interp.c
     src/platform_sdl.c
     src/input.c
+    src/mp_session.c
     ${SNESRECOMP_MENU_SRC}
 )
 target_include_directories(snesrecomp
@@ -83,6 +84,9 @@ target_link_libraries(snesrecomp
     PUBLIC  lakesnes_hw
     PUBLIC  SDL2::SDL2
 )
+if(WIN32)
+    target_link_libraries(snesrecomp PUBLIC ws2_32)   # netplay sockets (mp_session)
+endif()
 if(SNESRECOMP_MENU)
     target_include_directories(snesrecomp PRIVATE ${IMGUI_DIR})
     target_link_libraries(snesrecomp PRIVATE imgui)

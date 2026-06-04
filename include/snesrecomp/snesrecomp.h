@@ -89,6 +89,9 @@ void snesrecomp_reset(void);
 bool snesrecomp_save_state(const char *path);
 bool snesrecomp_load_state(const char *path);
 
+/* FNV-1a hash of WRAM (netplay desync detection / lockstep verification). */
+uint32_t snesrecomp_wram_checksum(void);
+
 /*
  * Trigger VBlank processing — NMI flag, PPU vblank handling.
  * Call this when your recompiled code reaches the NMI/VBlank point.

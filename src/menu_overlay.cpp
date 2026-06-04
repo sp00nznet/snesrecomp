@@ -18,6 +18,7 @@
 
 #include "snesrecomp/menu_overlay.h"
 #include "snesrecomp/input.h"   /* SNES_BTN_IDX_* */
+#include "snesrecomp/mp_session.h"
 
 #define SMK_BTN_COUNT 12
 #define SMK_CONFIG_PATH "smk_config.ini"
@@ -52,6 +53,11 @@ struct MenuState {
     /* Windows */
     bool show_about      = false;
     bool show_controller = false;
+    bool show_mp         = false;
+
+    /* Multiplayer (netplay) connection fields. */
+    char mp_ip[64] = "127.0.0.1";
+    int  mp_port   = 7878;
 
     /* Rebind capture. rebind_btn = -1 when idle; otherwise awaiting input for
      * (rebind_player, rebind_btn); rebind_pad selects keyboard(0) vs gamepad(1). */
@@ -302,6 +308,38 @@ static void draw_controller_window(void) {
     ImGui::End();
 }
 
+static void draw_multiplayer_window(void) {
+    ImGui::SetNextWindowSize(ImVec2(380, 280), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Multiplayer (netplay)", &g.show_mp)) {
+        ImGui::TextWrapped("Lockstep netplay over TCP. The host shares its game "
+            "state, then both machines play in sync. Host = Player 1, "
+            "client = Player 2. Pick 2-player in-game once connected.");
+        ImGui::Separator();
+        ImGui::Text("Status: %s", mp_status_text());
+        ImGui::Separator();
+
+        MpState st = mp_get_state();
+        if (st == MP_IDLE || st == MP_DISCONNECTED) {
+            ImGui::SetNextItemWidth(120);
+            ImGui::InputInt("Port", &g.mp_port);
+            if (g.mp_port < 1)     g.mp_port = 1;
+            if (g.mp_port > 65535) g.mp_port = 65535;
+            if (ImGui::Button("Host  (Player 1)", ImVec2(-1, 0))) mp_host(g.mp_port);
+            ImGui::Spacing();
+            ImGui::SetNextItemWidth(200);
+            ImGui::InputText("Host IP", g.mp_ip, sizeof(g.mp_ip));
+            if (ImGui::Button("Join  (Player 2)", ImVec2(-1, 0))) mp_join(g.mp_ip, g.mp_port);
+        } else {
+            if (st == MP_HOSTING)    ImGui::TextDisabled("Waiting for a peer to connect...");
+            if (st == MP_CONNECTING) ImGui::TextDisabled("Connecting...");
+            if (st == MP_CONNECTED)  ImGui::TextColored(ImVec4(0.4f,1,0.4f,1), "Connected — playing in sync.");
+            ImGui::Spacing();
+            if (ImGui::Button("Disconnect", ImVec2(-1, 0))) mp_disconnect();
+        }
+    }
+    ImGui::End();
+}
+
 static void draw_about_window(void) {
     ImGui::SetNextWindowSize(ImVec2(380, 270), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("About", &g.show_about)) {
@@ -376,11 +414,9 @@ extern "C" void menu_overlay_render(struct SDL_Renderer *renderer) {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Multiplayer")) {
-            ImGui::BeginDisabled();
-            ImGui::MenuItem("Host game (coming soon)");
-            ImGui::MenuItem("Join game (coming soon)");
-            ImGui::EndDisabled();
-            ImGui::TextDisabled("Long-term stretch goal");
+            ImGui::MenuItem("Connect (Host / Join)...", NULL, &g.show_mp);
+            ImGui::Separator();
+            ImGui::TextDisabled("%s", mp_status_text());
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Help")) {
@@ -392,6 +428,7 @@ extern "C" void menu_overlay_render(struct SDL_Renderer *renderer) {
     }
 
     if (g.show_controller) draw_controller_window();
+    if (g.show_mp)         draw_multiplayer_window();
     if (g.show_about)      draw_about_window();
 
     if (g.show_fps) {

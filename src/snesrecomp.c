@@ -6,6 +6,7 @@
  */
 
 #include "snesrecomp/snesrecomp.h"
+#include "snesrecomp/mp_session.h"
 #include "snes.h"
 #include "ppu.h"
 #include "input.h"
@@ -269,9 +270,42 @@ void snesrecomp_end_frame(void) {
  * shells, which drop the vblank waits the init loops on). No recomp boot chain
  * or NMI/main shells are involved; snes->cpu boots from the reset vector on the
  * first call. Mirrors begin_frame/end_frame so main.c can swap modes. */
+/* Netplay per-frame orchestration (generic; menu starts/stops the session).
+ * On the first connected frame the host sends its save-state and the client
+ * loads it (so both share an identical starting point); thereafter each frame
+ * exchanges the local pad for the remote's and feeds the synchronized pair to
+ * controllers 1 (host) and 2 (client). Lockstep keeps the two deterministic
+ * emulations in sync. */
+static void snesrecomp_mp_update(void) {
+    static bool synced = false;
+    if (mp_get_state() != MP_CONNECTED) { synced = false; return; }
+    if (!s_snes) return;
+
+    if (!synced) {
+        if (mp_is_host()) {
+            uint8_t *buf = (uint8_t *)malloc(1 << 20);
+            if (buf) { int sz = snes_saveState(s_snes, buf); mp_send_blob(buf, sz); free(buf); }
+        } else {
+            uint8_t *buf = NULL; int sz = 0;
+            if (mp_recv_blob(&buf, &sz)) { snes_loadState(s_snes, buf, sz); free(buf); }
+        }
+        synced = true;
+    }
+
+    /* The local player drives controller 1's bindings; route it to the right
+     * port and take the remote's for the other. */
+    uint16_t local = s_snes->input1->currentState;
+    uint16_t p1 = 0, p2 = 0;
+    if (mp_exchange(local, &p1, &p2)) {
+        s_snes->input1->currentState = p1;
+        s_snes->input2->currentState = p2;
+    }
+}
+
 bool snesrecomp_realframe_begin(void) {
     if (!platform_poll_events()) return false;
     recomp_input_update();
+    snesrecomp_mp_update();   /* lockstep input exchange when a session is active */
     return true;
 }
 
@@ -327,6 +361,14 @@ bool snesrecomp_load_state(const char *path) {
     if (ok) printf("smk: loaded state <- %s\n", path);
     else    fprintf(stderr, "smk: load state failed (%s) — wrong ROM or corrupt?\n", path);
     return ok;
+}
+
+/* FNV-1a hash of WRAM — for netplay desync detection / lockstep verification. */
+uint32_t snesrecomp_wram_checksum(void) {
+    if (!s_snes) return 0;
+    uint32_t h = 2166136261u;
+    for (int i = 0; i < 0x20000; i++) { h ^= s_snes->ram[i]; h *= 16777619u; }
+    return h;
 }
 
 void snesrecomp_active_video_rect(int *x, int *y, int *w, int *h) {
@@ -571,6 +613,7 @@ void snesrecomp_dump_ppu(const char *filepath) {
 }
 
 void snesrecomp_shutdown(void) {
+    mp_shutdown();
     platform_shutdown();
 
     if (s_snes) {
