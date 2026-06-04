@@ -42,6 +42,12 @@ MpState     mp_get_state(void);
 bool        mp_is_host(void);
 const char *mp_status_text(void);   /* short human-readable status for the menu */
 
+/* Input-delay buffering (frames). Higher = more network slack but more input
+ * lag. Set on the host BEFORE hosting; the value is sent to the client on
+ * connect so both always match. Default 2. */
+void mp_set_delay(int frames);
+int  mp_get_delay(void);
+
 /* Initial state sync over the connected socket (host sends, client receives).
  * Call once after MP_CONNECTED, before the first mp_exchange. */
 bool mp_send_blob(const uint8_t *data, int size);

@@ -320,6 +320,15 @@ static void draw_multiplayer_window(void) {
 
         MpState st = mp_get_state();
         if (st == MP_IDLE || st == MP_DISCONNECTED) {
+            int delay = mp_get_delay();
+            ImGui::SetNextItemWidth(160);
+            if (ImGui::SliderInt("Input delay (frames)", &delay, 0, 10)) mp_set_delay(delay);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(?)");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Higher absorbs more network lag but adds input delay.\n"
+                                  "Host sets this; the client adopts it. ~2-3 for LAN.");
+            ImGui::Separator();
             ImGui::SetNextItemWidth(120);
             ImGui::InputInt("Port", &g.mp_port);
             if (g.mp_port < 1)     g.mp_port = 1;

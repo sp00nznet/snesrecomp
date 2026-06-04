@@ -19,7 +19,10 @@
 static Snes *s_snes = NULL;
 
 /* Pixel buffer for PPU output (512x478x4 = ~978 KB) */
-static uint8_t s_pixel_buf[512 * 478 * 4];
+/* ppu_putPixels writes/clears up to 480 rows (the overscan-centred layout +
+ * trailing memset), so the buffer must hold 480 rows even though we only show
+ * 478 — a 478-row buffer overflows by 4096 bytes into adjacent statics. */
+static uint8_t s_pixel_buf[512 * 480 * 4];
 
 /* Audio sample buffer (enough for one frame at 32040 Hz / 60 fps) */
 #define SAMPLES_PER_FRAME 534
