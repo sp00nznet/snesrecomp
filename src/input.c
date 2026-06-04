@@ -6,9 +6,55 @@
  */
 
 #include "snesrecomp/input.h"
+#include "snesrecomp/menu_overlay.h"
 #include "snes.h"
 #include <SDL.h>
 #include <string.h>
+
+/* Up to two opened game controllers (Xbox-style), assigned to players 1 and 2.
+ * Empty slots are filled lazily each frame so hotplugged pads Just Work. */
+static SDL_GameController *s_gc[2] = { NULL, NULL };
+#define GC_AXIS_DEADZONE 12000
+
+static void ensure_gamepads(void) {
+    for (int slot = 0; slot < 2; slot++) {
+        if (s_gc[slot]) continue;
+        for (int i = 0; i < SDL_NumJoysticks(); i++) {
+            if (!SDL_IsGameController(i)) continue;
+            SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(i);
+            int held = 0;
+            for (int s2 = 0; s2 < 2; s2++) {
+                if (!s_gc[s2]) continue;
+                SDL_Joystick *j = SDL_GameControllerGetJoystick(s_gc[s2]);
+                if (j && SDL_JoystickInstanceID(j) == id) { held = 1; break; }
+            }
+            if (held) continue;
+            s_gc[slot] = SDL_GameControllerOpen(i);
+            if (s_gc[slot]) break;
+        }
+    }
+}
+
+/* True if `player` (1/2) currently presses SNES button `btn` via its bound key
+ * or gamepad button, plus left-stick-as-dpad for the directions. */
+static bool button_pressed(int player, int btn, const uint8_t *keys) {
+    int sc = menu_overlay_key_for_button(player, btn);
+    if (sc >= 0 && keys[sc]) return true;
+
+    SDL_GameController *gc = s_gc[player - 1];
+    if (gc) {
+        int pb = menu_overlay_pad_button_for_button(player, btn);
+        if (pb >= 0 && SDL_GameControllerGetButton(gc, (SDL_GameControllerButton)pb)) return true;
+        /* Left analog stick also drives the d-pad directions. */
+        int ax = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX);
+        int ay = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
+        if (btn == SNES_BTN_IDX_LEFT  && ax < -GC_AXIS_DEADZONE) return true;
+        if (btn == SNES_BTN_IDX_RIGHT && ax >  GC_AXIS_DEADZONE) return true;
+        if (btn == SNES_BTN_IDX_UP    && ay < -GC_AXIS_DEADZONE) return true;
+        if (btn == SNES_BTN_IDX_DOWN  && ay >  GC_AXIS_DEADZONE) return true;
+    }
+    return false;
+}
 
 /* Access to the LakeSnes instance */
 extern Snes *snesrecomp_get_snes(void);
@@ -151,27 +197,26 @@ void recomp_input_update(void) {
          */
         snes->input1->currentState = (uint16_t)(ms->latched & 0xFFFF);
     } else {
-        /* Standard joypad */
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_UP,     keys[SDL_SCANCODE_UP]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_DOWN,   keys[SDL_SCANCODE_DOWN]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_LEFT,   keys[SDL_SCANCODE_LEFT]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_RIGHT,  keys[SDL_SCANCODE_RIGHT]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_B,      keys[SDL_SCANCODE_Z]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_Y,      keys[SDL_SCANCODE_X]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_A,      keys[SDL_SCANCODE_A]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_X,      keys[SDL_SCANCODE_S]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_L,      keys[SDL_SCANCODE_Q]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_R,      keys[SDL_SCANCODE_W]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_START,  keys[SDL_SCANCODE_RETURN]);
-        snes_setButtonState(snes, 1, SNES_BTN_IDX_SELECT, keys[SDL_SCANCODE_RSHIFT]);
+        /* Standard joypad — driven from the configurable keyboard + gamepad
+         * bindings (see menu_overlay). When the menu has input focus, the game
+         * receives no presses. */
+        ensure_gamepads();
+        int block = menu_overlay_is_active();
+        for (int btn = 0; btn < 12; btn++)
+            snes_setButtonState(snes, 1, btn, block ? false : button_pressed(1, btn, keys));
     }
 
     /* --- Port 2 --- */
     if (s_device_type[1] == SNES_INPUT_SUPERSCOPE) {
         /* Super Scope: feed position and buttons into LakeSnes */
         snes_setSuperScopeState(snes, s_scope.x, s_scope.y, s_scope.buttons);
+    } else if (s_device_type[1] == SNES_INPUT_JOYPAD) {
+        /* Player 2 joypad — second keyboard set + second gamepad. */
+        ensure_gamepads();
+        int block = menu_overlay_is_active();
+        for (int btn = 0; btn < 12; btn++)
+            snes_setButtonState(snes, 2, btn, block ? false : button_pressed(2, btn, keys));
     }
-    /* (Port 2 joypad is handled by direct snes_setButtonState calls from recomp code) */
 }
 
 uint16_t recomp_input_read_joypad(int port) {

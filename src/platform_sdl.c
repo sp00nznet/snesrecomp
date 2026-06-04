@@ -3,6 +3,7 @@
  */
 
 #include "snesrecomp/platform.h"
+#include "snesrecomp/menu_overlay.h"
 #include <SDL.h>
 #include <stdio.h>
 
@@ -11,6 +12,19 @@ static SDL_Renderer *s_renderer = NULL;
 static SDL_Texture  *s_texture  = NULL;
 static SDL_AudioDeviceID s_audio_dev = 0;
 static uint64_t      s_frame_start = 0;
+static int           s_cur_scale  = 0;   /* tracks live window-scale changes */
+static int           s_cur_filter = -1;  /* tracks live texture-filter changes */
+
+/* (Re)create the streaming game texture with the given filter (0=nearest,
+ * 1=linear). Called at init and when the menu changes the filter. */
+static void recreate_texture(int filter) {
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, filter ? "1" : "0");
+    if (s_texture) SDL_DestroyTexture(s_texture);
+    s_texture = SDL_CreateTexture(s_renderer,
+        SDL_PIXELFORMAT_RGBX8888, SDL_TEXTUREACCESS_STREAMING,
+        SNES_RENDER_WIDTH, SNES_RENDER_HEIGHT);
+    s_cur_filter = filter;
+}
 
 /* NTSC frame time: ~16.6393 ms (60.098 Hz) */
 static const double FRAME_TIME_MS = 1000.0 / 60.098;
@@ -22,7 +36,7 @@ bool platform_init(const char *window_title, int scale) {
     int win_w = SNES_RENDER_WIDTH * scale / 2;  /* 512 is 2x native, scale from 256 */
     int win_h = SNES_RENDER_HEIGHT * scale / 2;  /* 478 is ~2x native */
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return false;
     }
@@ -81,6 +95,19 @@ bool platform_init(const char *window_title, int scale) {
     SDL_RenderClear(s_renderer);
     SDL_RenderPresent(s_renderer);
 
+    s_cur_scale  = scale;
+    s_cur_filter = 1;
+
+    /* ImGui menu overlay (no-op in headless/scripted runs). Apply any persisted
+     * scale/filter from its loaded config. */
+    menu_overlay_init(s_window, s_renderer);
+    if (menu_overlay_get_scale() != s_cur_scale) {
+        s_cur_scale = menu_overlay_get_scale();
+        SDL_SetWindowSize(s_window, SNES_RENDER_WIDTH * s_cur_scale / 2,
+                                    SNES_RENDER_HEIGHT * s_cur_scale / 2);
+    }
+    if (menu_overlay_get_filter() != s_cur_filter) recreate_texture(menu_overlay_get_filter());
+
     s_frame_start = SDL_GetPerformanceCounter();
     return true;
 }
@@ -88,10 +115,21 @@ bool platform_init(const char *window_title, int scale) {
 void platform_present_frame(const uint8_t *framebuffer) {
     if (!s_texture || !framebuffer) return;
 
+    /* Apply live graphics-setting changes from the menu. */
+    int want_scale = menu_overlay_get_scale();
+    if (want_scale != s_cur_scale) {
+        s_cur_scale = want_scale;
+        SDL_SetWindowSize(s_window, SNES_RENDER_WIDTH * s_cur_scale / 2,
+                                    SNES_RENDER_HEIGHT * s_cur_scale / 2);
+    }
+    int want_filter = menu_overlay_get_filter();
+    if (want_filter != s_cur_filter) recreate_texture(want_filter);
+
     SDL_UpdateTexture(s_texture, NULL, framebuffer,
                       SNES_RENDER_WIDTH * 4);
     SDL_RenderClear(s_renderer);
     SDL_RenderCopy(s_renderer, s_texture, NULL, NULL);
+    menu_overlay_render(s_renderer);   /* ImGui menu on top (no-op when disabled) */
     SDL_RenderPresent(s_renderer);
 }
 
@@ -100,8 +138,18 @@ void platform_queue_audio(const int16_t *samples, int sample_count) {
         /* Don't let audio buffer grow too large */
         uint32_t queued = SDL_GetQueuedAudioSize(s_audio_dev);
         if (queued < 32040 * 2 * 2 * 4) { /* ~4 frames max */
-            SDL_QueueAudio(s_audio_dev, samples,
-                           (uint32_t)(sample_count * 2 * sizeof(int16_t)));
+            float vol = menu_overlay_get_volume();   /* 1.0 when menu disabled */
+            if (vol >= 0.999f) {
+                SDL_QueueAudio(s_audio_dev, samples,
+                               (uint32_t)(sample_count * 2 * sizeof(int16_t)));
+            } else {
+                /* Scale by master volume into a temp buffer. */
+                static int16_t scaled[4096 * 2];
+                int n = sample_count * 2;
+                if (n > (int)(sizeof(scaled) / sizeof(scaled[0]))) n = sizeof(scaled) / sizeof(scaled[0]);
+                for (int i = 0; i < n; i++) scaled[i] = (int16_t)((int)samples[i] * vol);
+                SDL_QueueAudio(s_audio_dev, scaled, (uint32_t)(n * sizeof(int16_t)));
+            }
         }
     }
 }
@@ -112,20 +160,26 @@ extern void recomp_input_accumulate_mouse(int dx, int dy);
 bool platform_poll_events(void) {
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
+        /* Let the ImGui menu see every event first; if it captured the event
+         * (typing in a field, rebinding, clicking a menu) the game ignores it. */
+        int consumed = menu_overlay_process_event(&ev);
         switch (ev.type) {
         case SDL_QUIT:
             return false;
         case SDL_KEYDOWN:
-            if (ev.key.keysym.sym == SDLK_ESCAPE)
+            /* Esc quits only when the menu isn't using it (e.g. rebind-cancel). */
+            if (!consumed && ev.key.keysym.sym == SDLK_ESCAPE)
                 return false;
             break;
         case SDL_MOUSEMOTION:
-            recomp_input_accumulate_mouse(ev.motion.xrel, ev.motion.yrel);
+            if (!consumed)
+                recomp_input_accumulate_mouse(ev.motion.xrel, ev.motion.yrel);
             break;
         default:
             break;
         }
     }
+    if (menu_overlay_quit_requested()) return false;
     return true;
 }
 
@@ -141,6 +195,7 @@ void platform_frame_sync(void) {
 }
 
 void platform_shutdown(void) {
+    menu_overlay_shutdown();
     if (s_audio_dev > 0) {
         SDL_CloseAudioDevice(s_audio_dev);
         s_audio_dev = 0;

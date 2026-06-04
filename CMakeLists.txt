@@ -1,14 +1,40 @@
 cmake_minimum_required(VERSION 3.16)
-project(snesrecomp C)
+project(snesrecomp C CXX)
 
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Options
 option(SNESRECOMP_BUILD_EXAMPLES "Build example programs" ON)
+option(SNESRECOMP_MENU "Build the Dear ImGui menu overlay (File/Graphics/Sound/Controller/Help)" ON)
 
 # SDL2
 find_package(SDL2 REQUIRED)
+
+# --- Dear ImGui (static lib) — only when the menu overlay is enabled ---
+if(SNESRECOMP_MENU)
+    set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+    add_library(imgui STATIC
+        ${IMGUI_DIR}/imgui.cpp
+        ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp
+        ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_sdlrenderer2.cpp
+    )
+    target_include_directories(imgui PUBLIC ${IMGUI_DIR})
+    target_link_libraries(imgui PUBLIC SDL2::SDL2)
+    if(MSVC)
+        target_compile_options(imgui PRIVATE /W0)
+    else()
+        target_compile_options(imgui PRIVATE -w)
+    endif()
+    set(SNESRECOMP_MENU_SRC src/menu_overlay.cpp)
+else()
+    set(SNESRECOMP_MENU_SRC src/menu_overlay_stub.c)
+endif()
 
 # --- LakeSnes hardware backend (static lib) ---
 # We compile all of LakeSnes's snes/ directory. The CPU and input modules
@@ -47,6 +73,7 @@ add_library(snesrecomp STATIC
     src/recomp_interp.c
     src/platform_sdl.c
     src/input.c
+    ${SNESRECOMP_MENU_SRC}
 )
 target_include_directories(snesrecomp
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -56,6 +83,10 @@ target_link_libraries(snesrecomp
     PUBLIC  lakesnes_hw
     PUBLIC  SDL2::SDL2
 )
+if(SNESRECOMP_MENU)
+    target_include_directories(snesrecomp PRIVATE ${IMGUI_DIR})
+    target_link_libraries(snesrecomp PRIVATE imgui)
+endif()
 
 # --- Example: minimal recomp ---
 if(SNESRECOMP_BUILD_EXAMPLES)
