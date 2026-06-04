@@ -180,9 +180,13 @@ bool platform_poll_events(void) {
         case SDL_QUIT:
             return false;
         case SDL_KEYDOWN:
-            /* Esc quits only when the menu isn't using it (e.g. rebind-cancel). */
-            if (!consumed && ev.key.keysym.sym == SDLK_ESCAPE)
-                return false;
+            if (!consumed) {
+                /* Esc quits only when the menu isn't using it (rebind-cancel). */
+                if (ev.key.keysym.sym == SDLK_ESCAPE) return false;
+                /* Save-state hotkeys (mirror File -> Save / Load). */
+                if (ev.key.keysym.sym == SDLK_F5) snesrecomp_save_state("smk_state.sav");
+                if (ev.key.keysym.sym == SDLK_F8) snesrecomp_load_state("smk_state.sav");
+            }
             break;
         case SDL_MOUSEMOTION:
             if (!consumed)

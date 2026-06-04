@@ -61,6 +61,11 @@ struct MenuState {
 
     /* Height of the main menu bar in pixels (captured each frame). */
     int  menubar_h = 0;
+
+    /* One-shot File-menu emulator requests (consumed by the host). */
+    bool reset_req = false;
+    bool save_req  = false;
+    bool load_req  = false;
 };
 
 static MenuState g;
@@ -328,11 +333,18 @@ extern "C" void menu_overlay_render(struct SDL_Renderer *renderer) {
     if (ImGui::BeginMainMenuBar()) {
         g.menubar_h = (int)(ImGui::GetWindowSize().y + 0.5f);
         if (ImGui::BeginMenu("File")) {
-            if (ImGui::MenuItem("New Config"))   reset_defaults(g);
-            if (ImGui::MenuItem("Save Config"))  config_save();
-            if (ImGui::MenuItem("Load Config"))  config_load();
+            if (ImGui::MenuItem("New", "restart")) g.reset_req = true;
+            if (ImGui::MenuItem("Save", "F5"))     g.save_req  = true;
+            if (ImGui::MenuItem("Load", "F8"))     g.load_req  = true;
             ImGui::Separator();
-            if (ImGui::MenuItem("Quit"))         g.quit_requested = true;
+            if (ImGui::BeginMenu("Settings")) {
+                if (ImGui::MenuItem("Reset settings")) reset_defaults(g);
+                if (ImGui::MenuItem("Save settings"))  config_save();
+                if (ImGui::MenuItem("Load settings"))  config_load();
+                ImGui::EndMenu();
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Quit"))           g.quit_requested = true;
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Graphics")) {
@@ -405,6 +417,9 @@ extern "C" int menu_overlay_is_active(void) {
 }
 extern "C" int   menu_overlay_get_menubar_height(void) { return g.enabled ? g.menubar_h : 0; }
 extern "C" int   menu_overlay_quit_requested(void) { return g.quit_requested; }
+extern "C" int   menu_overlay_take_reset(void)      { int r = g.reset_req; g.reset_req = false; return r; }
+extern "C" int   menu_overlay_take_save_state(void) { int r = g.save_req;  g.save_req  = false; return r; }
+extern "C" int   menu_overlay_take_load_state(void) { int r = g.load_req;  g.load_req  = false; return r; }
 extern "C" int   menu_overlay_get_scale(void)      { return g.enabled ? g.scale : 3; }
 extern "C" int   menu_overlay_get_vsync(void)      { return g.vsync; }
 extern "C" int   menu_overlay_get_filter(void)     { return g.filter; }

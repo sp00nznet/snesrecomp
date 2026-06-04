@@ -82,6 +82,13 @@ void snesrecomp_realframe_end(void);
  */
 void snesrecomp_active_video_rect(int *x, int *y, int *w, int *h);
 
+/* Emulator controls (menu File -> New / Save / Load). reset() hard-resets and
+ * restarts the ROM; save/load_state serialize the full machine state to/from a
+ * file (LakeSnes save-state). */
+void snesrecomp_reset(void);
+bool snesrecomp_save_state(const char *path);
+bool snesrecomp_load_state(const char *path);
+
 /*
  * Trigger VBlank processing — NMI flag, PPU vblank handling.
  * Call this when your recompiled code reaches the NMI/VBlank point.

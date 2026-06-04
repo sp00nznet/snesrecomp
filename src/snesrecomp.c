@@ -285,6 +285,50 @@ void snesrecomp_realframe_end(void) {
     platform_frame_sync();
 }
 
+/* ---- Emulator controls (menu File -> New / Save / Load) ---- */
+
+/* Hard reset — re-fills WRAM (0x55) and restarts the ROM from the reset vector.
+ * In real-frame mode the next frame reboots the game. */
+void snesrecomp_reset(void) {
+    if (s_snes) snes_reset(s_snes, true);
+}
+
+/* Save the full machine state (LakeSnes save-state: CPU/PPU/APU/RAM/regs) to a
+ * file. Captures the genuine ROM execution that real-frame mode runs. */
+bool snesrecomp_save_state(const char *path) {
+    if (!s_snes || !path) return false;
+    uint8_t *buf = (uint8_t *)malloc(1 << 20);   /* 1 MB — ample for SNES state */
+    if (!buf) return false;
+    int size = snes_saveState(s_snes, buf);
+    bool ok = false;
+    FILE *f = fopen(path, "wb");
+    if (f) { ok = (int)fwrite(buf, 1, (size_t)size, f) == size; fclose(f); }
+    free(buf);
+    if (ok) printf("smk: saved state -> %s (%d bytes)\n", path, size);
+    else    fprintf(stderr, "smk: save state failed (%s)\n", path);
+    return ok;
+}
+
+/* Load a previously saved machine state. Validated by LakeSnes (id/version/cart
+ * must match); ignored if no/invalid file. */
+bool snesrecomp_load_state(const char *path) {
+    if (!s_snes || !path) return false;
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "smk: no save state at %s\n", path); return false; }
+    fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);
+    bool ok = false;
+    if (sz > 0) {
+        uint8_t *buf = (uint8_t *)malloc((size_t)sz);
+        if (buf && fread(buf, 1, (size_t)sz, f) == (size_t)sz)
+            ok = snes_loadState(s_snes, buf, (int)sz);
+        free(buf);
+    }
+    fclose(f);
+    if (ok) printf("smk: loaded state <- %s\n", path);
+    else    fprintf(stderr, "smk: load state failed (%s) — wrong ROM or corrupt?\n", path);
+    return ok;
+}
+
 void snesrecomp_active_video_rect(int *x, int *y, int *w, int *h) {
     /* The PPU framebuffer (512x478) centers the active picture with black
      * overscan bands: ppu_putPixels places non-overscan content (224 lines,

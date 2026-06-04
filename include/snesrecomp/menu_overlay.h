@@ -43,6 +43,16 @@ int  menu_overlay_get_menubar_height(void);
 /* Set by File -> Quit. */
 int  menu_overlay_quit_requested(void);
 
+/* One-shot emulator-control requests from the File menu (return 1 once and
+ * clear). The host consumes these between frames:
+ *   New        -> reset/restart the emulator
+ *   Save State -> snesrecomp_save_state()
+ *   Load State -> snesrecomp_load_state()
+ */
+int  menu_overlay_take_reset(void);
+int  menu_overlay_take_save_state(void);
+int  menu_overlay_take_load_state(void);
+
 /* ---- Settings accessors (polled by the platform each frame) ---- */
 int   menu_overlay_get_scale(void);
 int   menu_overlay_get_vsync(void);
