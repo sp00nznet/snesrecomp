@@ -4,6 +4,7 @@
 
 #include "snesrecomp/platform.h"
 #include "snesrecomp/menu_overlay.h"
+#include "snesrecomp/snesrecomp.h"
 #include <SDL.h>
 #include <stdio.h>
 
@@ -127,8 +128,20 @@ void platform_present_frame(const uint8_t *framebuffer) {
 
     SDL_UpdateTexture(s_texture, NULL, framebuffer,
                       SNES_RENDER_WIDTH * 4);
+
+    /* Crop the PPU's black overscan bands (the active picture is centred in the
+     * 478-tall buffer), and place the game below the menu bar so the menu never
+     * covers the top-of-screen HUD (lap timer/position). */
+    int rx, ry, rw, rh;
+    snesrecomp_active_video_rect(&rx, &ry, &rw, &rh);
+    SDL_Rect src = { rx, ry, rw, rh };
+    int menu_h = menu_overlay_get_menubar_height();
+    int out_w = 0, out_h = 0;
+    SDL_GetRendererOutputSize(s_renderer, &out_w, &out_h);
+    SDL_Rect dst = { 0, menu_h, out_w, out_h - menu_h };
+
     SDL_RenderClear(s_renderer);
-    SDL_RenderCopy(s_renderer, s_texture, NULL, NULL);
+    SDL_RenderCopy(s_renderer, s_texture, &src, &dst);
     menu_overlay_render(s_renderer);   /* ImGui menu on top (no-op when disabled) */
     SDL_RenderPresent(s_renderer);
 }

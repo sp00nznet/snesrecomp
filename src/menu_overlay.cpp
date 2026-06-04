@@ -58,6 +58,9 @@ struct MenuState {
     int  rebind_player = 0;
     int  rebind_btn    = -1;
     int  rebind_pad    = 0;
+
+    /* Height of the main menu bar in pixels (captured each frame). */
+    int  menubar_h = 0;
 };
 
 static MenuState g;
@@ -323,6 +326,7 @@ extern "C" void menu_overlay_render(struct SDL_Renderer *renderer) {
     ImGui::NewFrame();
 
     if (ImGui::BeginMainMenuBar()) {
+        g.menubar_h = (int)(ImGui::GetWindowSize().y + 0.5f);
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Config"))   reset_defaults(g);
             if (ImGui::MenuItem("Save Config"))  config_save();
@@ -399,6 +403,7 @@ extern "C" int menu_overlay_is_active(void) {
     ImGuiIO &io = ImGui::GetIO();
     return (g.rebind_btn >= 0 || io.WantCaptureKeyboard || io.WantCaptureMouse) ? 1 : 0;
 }
+extern "C" int   menu_overlay_get_menubar_height(void) { return g.enabled ? g.menubar_h : 0; }
 extern "C" int   menu_overlay_quit_requested(void) { return g.quit_requested; }
 extern "C" int   menu_overlay_get_scale(void)      { return g.enabled ? g.scale : 3; }
 extern "C" int   menu_overlay_get_vsync(void)      { return g.vsync; }

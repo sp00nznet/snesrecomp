@@ -285,6 +285,20 @@ void snesrecomp_realframe_end(void) {
     platform_frame_sync();
 }
 
+void snesrecomp_active_video_rect(int *x, int *y, int *w, int *h) {
+    /* The PPU framebuffer (512x478) centers the active picture with black
+     * overscan bands: ppu_putPixels places non-overscan content (224 lines,
+     * doubled) at rows 16..463, leaving 16px black at top and 14px at bottom.
+     * Return the active region so the platform can crop those bands. */
+    *x = 0;
+    *w = 512;
+    if (s_snes && s_snes->ppu && s_snes->ppu->frameOverscan) {
+        *y = 4;  *h = 470;   /* overscan frame — show ~full height */
+    } else {
+        *y = 16; *h = 448;   /* 224 active NTSC lines, 2x */
+    }
+}
+
 void snesrecomp_trigger_vblank(void) {
     if (!s_snes) return;
     s_snes->inVblank = true;

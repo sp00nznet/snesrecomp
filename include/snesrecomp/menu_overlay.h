@@ -36,6 +36,10 @@ void menu_overlay_render(struct SDL_Renderer *renderer);
 /* 1 while the menu is capturing input — the game must ignore keyboard/pad. */
 int  menu_overlay_is_active(void);
 
+/* Height in pixels of the main menu bar (0 when the menu is disabled). The
+ * platform renders the game below this so the menu never covers the HUD. */
+int  menu_overlay_get_menubar_height(void);
+
 /* Set by File -> Quit. */
 int  menu_overlay_quit_requested(void);
 

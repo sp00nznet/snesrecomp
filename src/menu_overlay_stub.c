@@ -11,6 +11,7 @@ void  menu_overlay_shutdown(void) {}
 int   menu_overlay_process_event(const void *e) { (void)e; return 0; }
 void  menu_overlay_render(struct SDL_Renderer *r) { (void)r; }
 int   menu_overlay_is_active(void) { return 0; }
+int   menu_overlay_get_menubar_height(void) { return 0; }
 int   menu_overlay_quit_requested(void) { return 0; }
 int   menu_overlay_get_scale(void) { return 3; }
 int   menu_overlay_get_vsync(void) { return 1; }

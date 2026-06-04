@@ -76,6 +76,13 @@ bool snesrecomp_realframe_begin(void);
 void snesrecomp_realframe_end(void);
 
 /*
+ * Active picture region within the 512x478 framebuffer (excludes the black
+ * overscan bands the PPU centers the image with). The platform crops to this
+ * so the game fills the window without top/bottom black borders.
+ */
+void snesrecomp_active_video_rect(int *x, int *y, int *w, int *h);
+
+/*
  * Trigger VBlank processing — NMI flag, PPU vblank handling.
  * Call this when your recompiled code reaches the NMI/VBlank point.
  */
