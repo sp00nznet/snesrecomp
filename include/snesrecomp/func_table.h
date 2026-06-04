@@ -57,4 +57,22 @@ bool recomp_interp_enabled(void);
 void recomp_interp_set_force(bool force);
 bool recomp_interp_force(void);
 
+/*
+ * Timed-recomp interception (Phase-1 of replacing real-frame mode). In the
+ * timed frame model (snes_runFrame drives real PPU/APU/NMI timing), enabling
+ * this installs a CPU opcode-fetch hook: whenever the timed CPU reaches a
+ * registered entry address, the recompiled native function runs in place of
+ * the ROM subroutine and PB:PC is advanced past it (simulated RTS/RTL). Code
+ * that is NOT registered keeps running on the timed CPU (full hardware
+ * fidelity). Game-agnostic: the host chooses which entries to intercept.
+ *
+ * add_intercept: register one entry (is_long = JSL/RTL vs JSR/RTS return).
+ * enable/disable: install/remove the hook.
+ * intercept_hits: count of interceptions so far (diagnostics).
+ */
+void          recomp_timed_add_intercept(uint32_t snes_addr, bool is_long);
+void          recomp_timed_recomp_enable(void);
+void          recomp_timed_recomp_disable(void);
+unsigned long recomp_timed_intercept_hits(void);
+
 #endif /* SNESRECOMP_FUNC_TABLE_H */

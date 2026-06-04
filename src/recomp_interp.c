@@ -322,3 +322,86 @@ void recomp_interp_call(uint32_t snes_addr, bool is_long) {
     c->write = saved_write;
     c->idle  = saved_idle;
 }
+
+/* ===== Phase-1 timed-recomp interception ==================================
+ *
+ * Unlike recomp_interp_call (above), which runs ROM on the LakeSnes CPU with
+ * UNTIMED handlers for the old manual-frame model, this path runs inside the
+ * TIMED frame loop (snes_runFrame, real PPU/APU/NMI timing — same as
+ * real-frame mode). The CPU calls g_cpuRecompHook at every opcode fetch; when
+ * PB:PC matches a registered entry we run the recompiled native body in place
+ * of the ROM subroutine and advance PB:PC past it via a simulated RTS/RTL.
+ *
+ * Cycles "skipped" by running the native body instantly are reabsorbed by the
+ * genuine code's next vblank spin-wait (which keeps stepping the timed CPU
+ * until the PPU actually reaches vblank), so ordinary (non-raster-timed)
+ * routines need no per-function cycle accounting. */
+
+extern bool (*g_cpuRecompHook)(Cpu*);
+
+typedef struct { uint32_t addr; bool is_long; } TimedIntercept;
+static TimedIntercept s_intercepts[128];
+static int            s_intercept_count = 0;
+static unsigned long  s_intercept_hits  = 0;
+
+void recomp_timed_add_intercept(uint32_t snes_addr, bool is_long) {
+    for (int i = 0; i < s_intercept_count; i++)
+        if (s_intercepts[i].addr == snes_addr) return;   /* dedupe */
+    if (s_intercept_count < (int)(sizeof(s_intercepts) / sizeof(s_intercepts[0]))) {
+        s_intercepts[s_intercept_count].addr    = snes_addr;
+        s_intercepts[s_intercept_count].is_long = is_long;
+        s_intercept_count++;
+    }
+}
+
+unsigned long recomp_timed_intercept_hits(void) { return s_intercept_hits; }
+
+static bool timed_recomp_hook(Cpu *c) {
+    uint32_t pc = ((uint32_t)c->k << 16) | (uint16_t)c->pc;
+    const TimedIntercept *e = NULL;
+    for (int i = 0; i < s_intercept_count; i++)
+        if (s_intercepts[i].addr == pc) { e = &s_intercepts[i]; break; }
+    if (!e) return false;
+    snes_func_t fn = func_table_lookup(pc);
+    if (!fn) return false;
+
+    if (getenv("SMK_RECOMP_DEBUG")) {
+        Snes *sn = snesrecomp_get_snes();
+        uint16_t sp = c->sp;
+        uint16_t ret = bus_read8(0x00, (sp + 1) & 0xFFFF) | (bus_read8(0x00, (sp + 2) & 0xFFFF) << 8);
+        fprintf(stderr, "[RECOMP] hit $%06X frame=%u db=%02X sp=%04X ret=%04X\n",
+                pc, sn ? sn->frames : 0, c->db, sp, ret);
+    }
+
+    sync_from_lake(c);   /* LakeSnes CPU regs -> g_cpu (native body reads these) */
+    fn();                /* run recompiled native body (g_cpu + recomp bus) */
+    sync_to_lake(c);     /* g_cpu -> LakeSnes CPU regs */
+
+    /* Optional cycle accounting: advance the timed clock by the original
+     * routine's non-DMA instruction cycles, which running the native body
+     * instantly skips. SMK_RECOMP_CYCLES=N (diagnostic/tuning while the
+     * per-function model is calibrated). */
+    {
+        static long extra = -2;
+        if (extra == -2) { const char *e = getenv("SMK_RECOMP_CYCLES"); extra = e ? atol(e) : 0; }
+        if (extra > 0) { Snes *sn = snesrecomp_get_snes(); if (sn) snes_runCycles(sn, (int)extra); }
+    }
+
+    /* Simulate the routine's terminating RTS (near) / RTL (long), using the
+     * return frame the calling JSR/JSL pushed. Stack lives in bank $00. */
+    uint16_t sp = c->sp;
+    uint16_t lo = bus_read8(0x00, (sp + 1) & 0xFFFF);
+    uint16_t hi = bus_read8(0x00, (sp + 2) & 0xFFFF);
+    c->pc = (uint16_t)((lo | (hi << 8)) + 1);
+    if (e->is_long) {
+        c->k  = (uint8_t)bus_read8(0x00, (sp + 3) & 0xFFFF);
+        c->sp = (uint16_t)((sp + 3) & 0xFFFF);
+    } else {
+        c->sp = (uint16_t)((sp + 2) & 0xFFFF);
+    }
+    s_intercept_hits++;
+    return true;
+}
+
+void recomp_timed_recomp_enable(void)  { g_cpuRecompHook = timed_recomp_hook; }
+void recomp_timed_recomp_disable(void) { g_cpuRecompHook = NULL; }
