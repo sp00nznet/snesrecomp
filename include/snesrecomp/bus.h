@@ -28,6 +28,11 @@ void     bus_write8(uint8_t bank, uint16_t addr, uint8_t val);
 uint16_t bus_read16(uint8_t bank, uint16_t addr);
 void     bus_write16(uint8_t bank, uint16_t addr, uint16_t val);
 
+/* Cycle-accurate model: advance the master clock by `cycles` (no-op unless
+ * SMK_RECOMP_CYCLEACCURATE is set). Autogen emits one call per recompiled
+ * instruction with that instruction's real master-cycle cost. */
+void     recomp_tick(int cycles);
+
 /* Direct WRAM access (faster than bus routing for stack/DP operations) */
 uint8_t  bus_wram_read8(uint32_t offset);
 void     bus_wram_write8(uint32_t offset, uint8_t val);

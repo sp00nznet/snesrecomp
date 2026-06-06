@@ -21,6 +21,26 @@
 /* Access to the LakeSnes instance (owned by snesrecomp.c) */
 extern Snes *snesrecomp_get_snes(void);
 
+/* Cycle-accurate model: a recompiled function advances the master clock by its
+ * real per-instruction cost (autogen emits recomp_tick() calls) so the PPU/APU/
+ * auto-joypad stay in phase with genuine timing — fixing the instant-execution
+ * skew that makes timing-sensitive / transition functions diverge. Mirrors
+ * snes_cpuRead's per-access stepping (dma_handleDma + snes_runCycles). Runtime-
+ * gated by SMK_RECOMP_CYCLEACCURATE so the same binary can A/B test instant vs
+ * cycle-accurate. */
+void recomp_tick(int cycles) {
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("SMK_RECOMP_CYCLEACCURATE");
+        on = e ? atoi(e) : 1;   /* default ON: more correct (fixes timing-sensitive
+                                 * funcs) and byte-identical for steady-state ones */
+    }
+    if (!on || cycles <= 0) return;
+    Snes *snes = snesrecomp_get_snes();
+    if (!snes) return;
+    dma_handleDma(snes->dma, cycles);
+    snes_runCycles(snes, cycles);
+}
 
 uint8_t bus_read8(uint8_t bank, uint16_t addr) {
     Snes *snes = snesrecomp_get_snes();
