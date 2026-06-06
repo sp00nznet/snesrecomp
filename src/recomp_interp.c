@@ -367,17 +367,21 @@ void recomp_set_redirect(uint32_t snes_addr) { s_redirect = snes_addr; }
  * executes, so the hottest leaves (best recompilation targets) can be ranked.
  * Indirect dispatch (JSR ($table,x)) is not target-resolvable here and is
  * skipped — leaves are virtually always called directly. */
-typedef struct { uint32_t addr; unsigned long count; } CallTally;
+/* Records each direct JSR/JSL target with the M/X flags the callee enters with
+ * (= the caller's current flags; JSR/JSL preserve P), and a multi-flag marker so
+ * the auto-generator can skip per-(M,X) variant targets. */
+typedef struct { uint32_t addr; unsigned long count; uint8_t m, x, multi; } CallTally;
 static CallTally s_tally[8192];
 static int       s_tally_n  = 0;
 static bool      s_profile  = false;
 
 void recomp_timed_profile_enable(void) { s_profile = true; }
 
-static void tally_call(uint32_t target) {
+static void tally_call(uint32_t target, uint8_t m, uint8_t x) {
     for (int i = 0; i < s_tally_n; i++)
         if (s_tally[i].addr == target) {
             s_tally[i].count++;
+            if (s_tally[i].m != m || s_tally[i].x != x) s_tally[i].multi = 1;
             if (i > 0) {  /* move-to-front: keep hot targets cheap to find */
                 CallTally t = s_tally[i]; s_tally[i] = s_tally[i - 1]; s_tally[i - 1] = t;
             }
@@ -386,20 +390,25 @@ static void tally_call(uint32_t target) {
     if (s_tally_n < (int)(sizeof(s_tally) / sizeof(s_tally[0]))) {
         s_tally[s_tally_n].addr = target;
         s_tally[s_tally_n].count = 1;
+        s_tally[s_tally_n].m = m; s_tally[s_tally_n].x = x; s_tally[s_tally_n].multi = 0;
         s_tally_n++;
     }
 }
 
 void recomp_timed_profile_dump(int top) {
     fprintf(stderr, "=== timed-recomp call profile: %d distinct JSR/JSL targets ===\n", s_tally_n);
+    fprintf(stderr, "# addr   count    P(entry)  flags\n");
     for (int k = 0; k < top; k++) {
         int best = -1; unsigned long bc = 0;
         for (int i = 0; i < s_tally_n; i++)
             if (s_tally[i].count > bc) { bc = s_tally[i].count; best = i; }
         if (best < 0) break;
-        fprintf(stderr, "  $%06X  x%-8lu%s\n", s_tally[best].addr, s_tally[best].count,
-                func_table_lookup(s_tally[best].addr) ? " [recompiled]" : "");
-        s_tally[best].count = 0;  /* consume so the next pass finds the next-highest */
+        CallTally *t = &s_tally[best];
+        uint8_t P = (uint8_t)((t->m ? 0x20 : 0) | (t->x ? 0x10 : 0));
+        fprintf(stderr, "PROF %06X %-8lu %02X %s%s\n", t->addr, t->count, P,
+                t->multi ? "MULTI-MX " : "",
+                func_table_lookup(t->addr) ? "recompiled" : "");
+        t->count = 0;  /* consume so the next pass finds the next-highest */
     }
 }
 
@@ -410,12 +419,12 @@ static bool timed_recomp_hook(Cpu *c) {
             uint32_t t = ((uint32_t)c->k << 16)
                        | bus_read8(c->k, c->pc + 1)
                        | ((uint32_t)bus_read8(c->k, c->pc + 2) << 8);
-            tally_call(t);
+            tally_call(t, c->mf, c->xf);
         } else if (op == 0x22) {  /* JSL long */
             uint32_t t = bus_read8(c->k, c->pc + 1)
                        | ((uint32_t)bus_read8(c->k, c->pc + 2) << 8)
                        | ((uint32_t)bus_read8(c->k, c->pc + 3) << 16);
-            tally_call(t);
+            tally_call(t, c->mf, c->xf);
         }
     }
 
