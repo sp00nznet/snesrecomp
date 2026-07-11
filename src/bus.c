@@ -12,6 +12,7 @@
 #include "snes.h"
 #include "cart.h"
 #include "apu.h"
+#include "gsu.h"
 
 #include <string.h>
 #include <stdbool.h>
@@ -181,5 +182,34 @@ void bus_run_cycles(int master_cycles) {
      * We directly run the APU for an equivalent number of cycles. */
     int apu_cycles = master_cycles;  /* 1:1 works — apu_runCycles counts SPC clocks */
     apu_runCycles(snes->apu, apu_cycles);
+}
+
+/* --- GSU / Super FX access ---
+ * Thin wrappers over the LakeSnes GSU. GSU MMIO ($3000-$303F, cache $3100-$32FF,
+ * work RAM $60-$71) already routes through snes_read/write -> cart_read/write
+ * (cart type 6 = LoROM+SuperFX); these are conveniences for recompiled code that
+ * pokes the GSU directly (e.g. writing R15 hi to kick off a program run). */
+
+bool bus_has_gsu(void) {
+    Snes *snes = snesrecomp_get_snes();
+    return snes && snes->cart && snes->cart->gsu;
+}
+
+uint8_t bus_gsu_read(uint16_t addr) {
+    Snes *snes = snesrecomp_get_snes();
+    if (!snes || !snes->cart || !snes->cart->gsu) return 0;
+    return gsu_read(snes->cart->gsu, addr);
+}
+
+void bus_gsu_write(uint16_t addr, uint8_t val) {
+    Snes *snes = snesrecomp_get_snes();
+    if (!snes || !snes->cart || !snes->cart->gsu) return;
+    gsu_write(snes->cart->gsu, addr, val);
+}
+
+void bus_gsu_run(void) {
+    Snes *snes = snesrecomp_get_snes();
+    if (!snes || !snes->cart || !snes->cart->gsu) return;
+    gsu_run(snes->cart->gsu);
 }
 
