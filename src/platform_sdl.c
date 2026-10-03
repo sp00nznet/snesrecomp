@@ -444,10 +444,10 @@ void platform_request_screenshot(void) {
 }
 
 bool platform_mouse_to_snes(int *x, int *y) {
-    if (!s_renderer || !s_window) return false;
     /* A scripted mouse IS the pointer; the real cursor is irrelevant here (and
      * would make headless runs depend on where the user happened to leave it). */
-    if (recomp_input_mouse_script_active()) return false;
+    if (recomp_input_mouse_script_active()) return recomp_input_mouse_script_pointer(x, y);
+    if (!s_renderer || !s_window) return false;
 
     int mx, my;
     SDL_GetMouseState(&mx, &my);

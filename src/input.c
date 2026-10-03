@@ -7,6 +7,7 @@
 
 #include "snesrecomp/input.h"
 #include "snesrecomp/menu_overlay.h"
+#include "snesrecomp/platform.h"
 #include "snes.h"
 #include <SDL.h>
 #include <string.h>
@@ -184,13 +185,22 @@ static uint32_t build_mouse_serial(const SnesMouseState *ms) {
  *
  * Steps are whitespace-separated and may be listed in any order. A frame with
  * no step leaves the live SDL mouse untouched.
+ *
+ * Absolute pointer: "frame:@x:@y:btn[:count]" parks a virtual host pointer at
+ * SNES pixel (x, y) instead of sending a delta. platform_mouse_to_snes() reports
+ * it, so a game that steers its cursor toward the host pointer (closed loop)
+ * walks straight there; the pointer stays put until the next @ step.
+ *   SNESRECOMP_MOUSE_SCRIPT="600:@40:@212:0:20 620:@40:@212:L:2"
  */
-#define MOUSE_SCRIPT_MAX 256
-typedef struct { int frame, dx, dy, count; bool left, right; } MouseStep;
+#define MOUSE_SCRIPT_MAX 4096
+typedef struct { int frame, dx, dy, count; bool left, right, abs; } MouseStep;
 static MouseStep s_msteps[MOUSE_SCRIPT_MAX];
 static int       s_mstep_count = 0;
 static int       s_mscript_frame = 0;
 static int       s_mscript_parsed = 0;
+static bool      s_mptr_valid = false;
+static int       s_cursor_x_addr = -1, s_cursor_y_addr = -1;
+static int       s_mptr_x = 0, s_mptr_y = 0;
 
 static void mouse_script_parse(void) {
     s_mscript_parsed = 1;
@@ -202,9 +212,10 @@ static void mouse_script_parse(void) {
         char *end;
         long frame = strtol(p, &end, 10);
         if (end == p || *end != ':') break;
-        long dx = strtol(end + 1, &end, 10);
+        bool abs = end[1] == '@';
+        long dx = strtol(end + 1 + abs, &end, 10);
         if (*end != ':') break;
-        long dy = strtol(end + 1, &end, 10);
+        long dy = strtol(end + 1 + (end[1] == '@'), &end, 10);
         if (*end != ':') break;
         p = end + 1;
         bool l = false, r = false;
@@ -218,9 +229,46 @@ static void mouse_script_parse(void) {
         if (count < 1) count = 1;
         MouseStep *s = &s_msteps[s_mstep_count++];
         s->frame = (int)frame; s->dx = (int)dx; s->dy = (int)dy;
-        s->count = (int)count; s->left = l; s->right = r;
+        s->count = (int)count; s->left = l; s->right = r; s->abs = abs;
     }
     fprintf(stderr, "snesrecomp: mouse script parsed, %d step(s)\n", s_mstep_count);
+}
+
+/*
+ * Lock the game's cursor to the host pointer (live, or a scripted "@x:@y").
+ * The SNES mouse is relative, so forwarded host deltas drift: slow moves
+ * truncate to zero and anything the game rejects at its cursor bounds is lost
+ * for good. Instead, each frame report the displacement that moves the game's
+ * cursor (at the registered WRAM address) toward the pointer, recomputed from
+ * scratch so error cannot accumulate.
+ *
+ * The game may apply a reported delta in the same frame or the next one (real-
+ * frame mode latches at the following auto-read), so a delta sent every frame
+ * overshoots and rings, by an amount that depends on timing. Instead: send the
+ * whole error, then one still frame, then measure again. That lands exactly
+ * whatever the lag, and stays deterministic, which the conformance harness
+ * needs. Pointer off the game area: fall back to raw deltas.
+ */
+static void steer_cursor(SnesMouseState *ms) {
+    static bool s_settling = false;
+    Snes *snes = snesrecomp_get_snes();
+    int px, py;
+    if (s_cursor_x_addr < 0 || !snes || !platform_mouse_to_snes(&px, &py)) return;
+    if (s_settling) { s_settling = false; ms->dx = ms->dy = 0; return; }
+    ms->dx = px - (int16_t)(snes->ram[s_cursor_x_addr] | snes->ram[s_cursor_x_addr + 1] << 8);
+    ms->dy = py - (int16_t)(snes->ram[s_cursor_y_addr] | snes->ram[s_cursor_y_addr + 1] << 8);
+    s_settling = ms->dx || ms->dy;
+}
+
+void recomp_input_set_mouse_cursor_addr(int x_addr, int y_addr) {
+    s_cursor_x_addr = x_addr & 0x1FFFF;
+    s_cursor_y_addr = y_addr & 0x1FFFF;
+}
+
+bool recomp_input_mouse_script_pointer(int *x, int *y) {
+    if (!s_mptr_valid) return false;
+    *x = s_mptr_x; *y = s_mptr_y;
+    return true;
 }
 
 bool recomp_input_mouse_script_active(void) {
@@ -235,8 +283,13 @@ static void mouse_script_apply(SnesMouseState *ms) {
     for (int i = 0; i < s_mstep_count; i++) {
         const MouseStep *s = &s_msteps[i];
         if (s_mscript_frame >= s->frame && s_mscript_frame < s->frame + s->count) {
-            ms->dx = s->dx;
-            ms->dy = s->dy;
+            if (s->abs) {
+                s_mptr_valid = true; s_mptr_x = s->dx; s_mptr_y = s->dy;
+                ms->dx = 0; ms->dy = 0;   /* steer_cursor() supplies the motion */
+            } else {
+                ms->dx = s->dx;
+                ms->dy = s->dy;
+            }
             ms->left = s->left;
             ms->right = s->right;
             return;
@@ -270,6 +323,7 @@ void recomp_input_update(void) {
         /* A scripted step for this frame overrides the live SDL mouse, so a
          * headless run is reproducible and doesn't fight the real cursor. */
         mouse_script_apply(ms);
+        steer_cursor(ms);
 
         /* Build serial data and latch it (used by the recomp path's own
          * $4016/$4017 reads). */

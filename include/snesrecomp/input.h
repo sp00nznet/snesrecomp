@@ -117,6 +117,16 @@ void recomp_input_set_scope(uint16_t x, uint16_t y, uint8_t buttons);
  * mapping is meaningless then — the script is the pointer. */
 bool recomp_input_mouse_script_active(void);
 
+/* Virtual pointer from the latest "@x:@y" script step, in SNES pixels.
+ * False until a script has parked one. */
+bool recomp_input_mouse_script_pointer(int *x, int *y);
+
+/* WRAM offsets of the game's 16-bit cursor X/Y. With these set, the mouse
+ * reports whatever delta moves that cursor onto the host pointer (or a scripted
+ * "@x:@y"), so the cursor stays locked to the pointer instead of drifting.
+ * Works for recompiled and real-frame code alike. Opt-in per game. */
+void recomp_input_set_mouse_cursor_addr(int x_addr, int y_addr);
+
 /* Update keyboard/gamepad/mouse state and feed into LakeSnes input system */
 void recomp_input_update(void);
 
