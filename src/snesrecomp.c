@@ -173,7 +173,15 @@ bool snesrecomp_load_rom(const char *path) {
     return true;
 }
 
+/* Set by lockstep validation while a native body runs on a throwaway copy of
+ * the machine: a frame presented there would advance the capture clock, the
+ * mouse script and the host window for real. recomp_interp.c reads
+ * g_recomp_frame_touched to mark the check as skipped. */
+bool g_recomp_validating = false;
+bool g_recomp_frame_touched = false;
+
 bool snesrecomp_begin_frame(void) {
+    if (g_recomp_validating) { g_recomp_frame_touched = true; return true; }
     /* Poll SDL events */
     if (!platform_poll_events()) {
         return false;
@@ -250,6 +258,7 @@ static void snesrecomp_capture_tick(void) {
 
 void snesrecomp_end_frame(void) {
     if (!s_snes) return;
+    if (g_recomp_validating) { g_recomp_frame_touched = true; return; }
 
     /* Start-of-frame PPU bookkeeping (toggles evenFrame, resets mosaic, etc.) */
     ppu_handleFrameStart(s_snes->ppu);

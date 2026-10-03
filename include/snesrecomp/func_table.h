@@ -75,6 +75,27 @@ void          recomp_timed_recomp_enable(void);
 void          recomp_timed_recomp_disable(void);
 unsigned long recomp_timed_intercept_hits(void);
 
+/*
+ * For native code that polls a hardware flag the ROM spins on ($4212 auto-read
+ * busy, HVBJOY, an APU port). Inside the timed loop it advances the clock by
+ * master_cycles (about one poll iteration) and returns true, so the flag can
+ * change; elsewhere it returns false, meaning time will not pass and the caller
+ * should stop spinning. Translate  `-: LDA $4212 : AND #1 : BNE -`  as
+ *     while ((bus_read8(0x00, 0x4212) & 1) && recomp_timed_spin(64)) {}
+ */
+bool recomp_timed_spin(int master_cycles);
+
+/*
+ * Lockstep validation: on each call of snes_addr inside the timed loop, run the
+ * registered native body on a saved copy of the machine, restore, let the ROM
+ * routine run, and compare WRAM/VRAM/CGRAM/OAM when it returns. Execution stays
+ * genuine, so a mismatch is the function's own fault, not a timing knock-on.
+ * Needs recomp_timed_recomp_enable(). recomp_timed_validate_report() prints one
+ * "VALIDATE addr calls= mem_fail= reg_fail= skipped=" line per function.
+ */
+void recomp_timed_add_validate(uint32_t snes_addr, bool is_long);
+void recomp_timed_validate_report(void);
+
 /* Call-target profiler: rank the hottest direct JSR/JSL targets (best
  * recompilation candidates). Enable before the run; dump the top-N at the end. */
 void recomp_timed_profile_enable(void);

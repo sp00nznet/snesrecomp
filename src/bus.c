@@ -43,6 +43,8 @@ void recomp_tick(int cycles) {
     snes_runCycles(snes, cycles);
 }
 
+extern void recomp_validate_note_write(uint32_t adr, uint8_t val);
+
 uint8_t bus_read8(uint8_t bank, uint16_t addr) {
     Snes *snes = snesrecomp_get_snes();
     if (!snes) return 0;
@@ -55,6 +57,7 @@ void bus_write8(uint8_t bank, uint16_t addr, uint8_t val) {
     if (!snes) return;
     uint32_t flat = ((uint32_t)bank << 16) | addr;
     snes_write(snes, flat, val);
+    recomp_validate_note_write(flat, val);   /* lockstep validation: register writes */
 
     /* Diagnostic: count/trace ALL CGRAM-data writes (CPU interp + recompiled C
      * both pass through here), to find non-interpreter CGRAM writers. */
