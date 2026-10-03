@@ -15,6 +15,16 @@
 #define SNES_RENDER_WIDTH   512
 #define SNES_RENDER_HEIGHT  478
 
+/*
+ * Headless mode (call before platform_init / snesrecomp_init): no window,
+ * renderer, audio device or frame pacing. Screenshots (SNESRECOMP_SHOT_FRAMES)
+ * come from the PPU framebuffer; record_path, if non-NULL, pipes every frame
+ * to ffmpeg (must be on PATH) as an H.264 mp4. snesrecomp_parse_args() wires
+ * this to --headless / --record.
+ */
+void platform_set_headless(const char *record_path);
+bool platform_is_headless(void);
+
 /* Initialize SDL2 window + renderer + audio */
 bool platform_init(const char *window_title, int scale);
 

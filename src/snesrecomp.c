@@ -79,6 +79,20 @@ void snesrecomp_dump_snapshot(const char *filepath) {
     fclose(f);
 }
 
+int snesrecomp_parse_args(int argc, char **argv) {
+    bool headless = false;
+    const char *record = NULL;
+    int out = 1;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--headless")) headless = true;
+        else if (!strcmp(argv[i], "--record") && i + 1 < argc) { record = argv[++i]; headless = true; }
+        else argv[out++] = argv[i];
+    }
+    if (headless) platform_set_headless(record);
+    argv[out] = NULL;
+    return out;
+}
+
 bool snesrecomp_init(const char *window_title, int scale) {
     /* Create LakeSnes instance (allocates CPU, PPU, APU, DMA, Cart) */
     s_snes = snes_init();

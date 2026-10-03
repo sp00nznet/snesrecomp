@@ -36,6 +36,14 @@
 #include <stdbool.h>
 
 /*
+ * Consume the shared recomp CLI flags from argv and return the new argc:
+ *   --headless          render offscreen: no window, no audio, no pacing
+ *   --record out.mp4    pipe frames to ffmpeg (implies --headless)
+ * Call before snesrecomp_init. Remaining args keep their order.
+ */
+int snesrecomp_parse_args(int argc, char **argv);
+
+/*
  * Initialize all SNES hardware subsystems and the SDL2 platform layer.
  * Call this once at startup before anything else.
  *

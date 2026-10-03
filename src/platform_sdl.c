@@ -25,6 +25,14 @@ static uint64_t      s_frame_start = 0;
 static int           s_cur_scale  = 0;   /* tracks live window-scale changes */
 static int           s_cur_filter = -1;  /* tracks live texture-filter changes */
 
+/* Headless mode: no window, renderer or audio device, no 60 Hz pacing. Frames
+ * still run; screenshots come straight from the PPU framebuffer and --record
+ * pipes the same pixels to ffmpeg. Works over RDP without taking over a screen. */
+static bool          s_headless    = false;
+static const char   *s_record_path = NULL;
+static FILE         *s_record_pipe = NULL;
+static int           s_rec_w = 0, s_rec_h = 0;
+
 /* (Re)create the streaming game texture with the given filter (0=nearest,
  * 1=linear). Called at init and when the menu changes the filter. */
 static void recreate_texture(int filter) {
@@ -151,12 +159,80 @@ static void draw_toast(void) {
     }
 }
 
+void platform_set_headless(const char *record_path) {
+    s_headless = true;
+    s_record_path = record_path;
+}
+
+bool platform_is_headless(void) { return s_headless; }
+
+/* Active picture (overscan cropped) from the PPU buffer: bytes are X,B,G,R. */
+static void headless_capture(const uint8_t *fb) {
+    int rx, ry, rw, rh;
+    snesrecomp_active_video_rect(&rx, &ry, &rw, &rh);
+    const uint8_t *src = fb + (size_t)ry * SNES_RENDER_WIDTH * 4 + rx * 4;
+
+    if (s_screenshot_requested) {
+        s_screenshot_requested = false;
+        uint8_t *rgba = (uint8_t *)malloc((size_t)rw * rh * 4);
+        if (rgba) {
+            for (int y = 0; y < rh; y++)
+                for (int x = 0; x < rw; x++) {
+                    const uint8_t *p = src + ((size_t)y * SNES_RENDER_WIDTH + x) * 4;
+                    uint8_t *q = rgba + ((size_t)y * rw + x) * 4;
+                    q[0] = p[3]; q[1] = p[2]; q[2] = p[1]; q[3] = 255;
+                }
+            char filename[64];
+            snprintf(filename, sizeof(filename), "screenshot_%04d.png", s_screenshot_counter++);
+            stbi_write_png(filename, rw, rh, 4, rgba, rw * 4);
+            printf("Screenshot saved: %s\n", filename);
+            fflush(stdout);
+            free(rgba);
+        }
+    }
+
+    if (!s_record_path) return;
+    if (!s_record_pipe) {
+        /* ponytail: frame size fixed by the first frame; a later overscan switch
+         * is cropped/padded to it rather than restarting the encoder. */
+        s_rec_w = rw; s_rec_h = rh;
+        char cmd[1024];
+        snprintf(cmd, sizeof(cmd),
+            "ffmpeg -y -loglevel error -f rawvideo -pix_fmt abgr -s %dx%d -r 60.098 -i - "
+            "-c:v libx264 -pix_fmt yuv420p \"%s\"", s_rec_w, s_rec_h, s_record_path);
+#ifdef _WIN32
+        s_record_pipe = _popen(cmd, "wb");
+#else
+        s_record_pipe = popen(cmd, "w");
+#endif
+        if (!s_record_pipe) {
+            fprintf(stderr, "platform: could not start ffmpeg for --record (is it on PATH?)\n");
+            s_record_path = NULL;
+            return;
+        }
+    }
+    static uint8_t blank[SNES_RENDER_WIDTH * 4];
+    for (int y = 0; y < s_rec_h; y++)
+        fwrite(y < rh ? src + (size_t)y * SNES_RENDER_WIDTH * 4 : blank, 1, (size_t)s_rec_w * 4, s_record_pipe);
+}
+
 bool platform_init(const char *window_title, int scale) {
     if (scale < 1) scale = 1;
     if (scale > 8) scale = 8;
 
     int win_w = SNES_RENDER_WIDTH * scale / 2;
     int win_h = SNES_RENDER_HEIGHT * scale / 2;
+
+    if (s_headless) {
+        if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_EVENTS) != 0) {
+            fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+            return false;
+        }
+        menu_overlay_init(NULL, NULL);   /* disables the menu */
+        printf("platform: headless%s%s\n",s_record_path ? ", recording to " : "",
+               s_record_path ? s_record_path : "");
+        return true;
+    }
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -249,6 +325,7 @@ bool platform_init(const char *window_title, int scale) {
 }
 
 void platform_present_frame(const uint8_t *framebuffer) {
+    if (s_headless && framebuffer) { headless_capture(framebuffer); return; }
     if (!s_texture || !framebuffer) return;
 
     /* Apply live graphics-setting changes from the menu. */
@@ -351,6 +428,7 @@ bool platform_poll_events(void) {
 }
 
 void platform_frame_sync(void) {
+    if (s_headless) return;   /* run as fast as the host allows */
     uint64_t now = SDL_GetPerformanceCounter();
     double elapsed_ms = (double)(now - s_frame_start) * 1000.0
                         / (double)SDL_GetPerformanceFrequency();
@@ -407,6 +485,14 @@ bool platform_mouse_to_snes(int *x, int *y) {
 }
 
 void platform_shutdown(void) {
+    if (s_record_pipe) {
+#ifdef _WIN32
+        _pclose(s_record_pipe);
+#else
+        pclose(s_record_pipe);
+#endif
+        s_record_pipe = NULL;
+    }
     menu_overlay_shutdown();
 
     if (s_toast_tex) SDL_DestroyTexture(s_toast_tex);
