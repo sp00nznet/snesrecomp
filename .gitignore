@@ -5,3 +5,11 @@ build/
 *.srm
 CMakeSettings.json
 out/
+
+# Generated from a ROM: never committed
+gen/
+scratch/
+*.mp4
+*.zip
+*.sav
+build-farm/

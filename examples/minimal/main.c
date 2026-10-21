@@ -15,9 +15,11 @@
  */
 
 #include <snesrecomp/snesrecomp.h>
+#include <SDL.h>   /* SDL2main needs main renamed to SDL_main */
 #include <stdio.h>
 
 int main(int argc, char *argv[]) {
+    argc = snesrecomp_parse_args(argc, argv);   /* --headless, --record out.mp4 */
     const char *rom_path = (argc >= 2) ? argv[1] : "game.sfc";
 
     printf("snesrecomp minimal example\n");

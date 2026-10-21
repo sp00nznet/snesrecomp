@@ -24,6 +24,32 @@ Your Recompiled Game Code
     SDL2 Window + Audio Output
 ```
 
+Part of the recomp family (snesrecomp, gbarecomp, lynxrecomp, xboxrecomp,
+ps3recomp, pcrecomp, ...) and follows the same house style: toolkit and game repos
+kept apart, generated code never committed, `--headless --record` on every build, a
+conformance harness against a reference.
+
+## Status
+
+**Alpha. Unversioned.** The hardware layer is LakeSnes and is complete; the
+recompilation side (timed loop, lockstep validation, `autogen.py`) is new and
+moving. Titles built on it:
+
+| Title | Repo | State |
+|---|---|---|
+| Super Mario Kart | [mk](https://github.com/sp00nznet/mk) | Playable end to end (genuine ROM in the timed frame); recompiled shells growing |
+| Mario Paint | [mariopaint](https://github.com/sp00nznet/mariopaint) | Title, canvas and bottom bar work; 57/103 hand-ports pass conformance |
+| Stunt Race FX | [stuntrace](https://github.com/sp00nznet/stuntrace) | Boots with Super FX (GSU-2 in the LakeSnes fork); game logic in progress |
+
+The toolkit has no conformance harness of its own yet; the game repos carry
+theirs (see [ROADMAP.md](ROADMAP.md)).
+
+## Screenshots
+
+Mario Paint, running on snesrecomp:
+
+![Mario Paint canvas](https://raw.githubusercontent.com/sp00nznet/mariopaint/main/docs/screenshots/canvas-timed.png)
+
 ## What is this?
 
 Static recompilation takes a console game's machine code and converts it into equivalent native C code that runs on modern hardware. The hard part isn't recompiling the CPU instructions — it's providing the **hardware** those instructions talk to.
@@ -51,7 +77,10 @@ This is the same approach used by [N64Recomp](https://github.com/N64Recomp/N64Re
 | **Platform** | SDL2 window, renderer, audio output, frame timing | SDL2 |
 | **Input** | Joypad + SNES Mouse + Super Scope, keyboard/mouse mapping, hardware auto-read | SDL2 + LakeSnes |
 
-## Quick Start
+## Getting Started
+
+The toolkit is used from a game repo, and the game repo's README is the quick
+start (it fetches this repo as a submodule). To build the toolkit on its own:
 
 ### 1. Clone with submodules
 
@@ -73,13 +102,21 @@ cmake -B build
 cmake --build build
 ```
 
+Prerequisites: CMake 3.16+, a C11/C++17 compiler (Visual Studio 2022, GCC or
+Clang), SDL2 (`vcpkg install sdl2:x64-windows` on Windows), and optionally
+SDL2_ttf for the menu font. Clone with `--recursive`: LakeSnes is a submodule
+and the build fails without it.
+
 ### 3. Run the minimal example
 
 ```bash
 ./build/Debug/snesrecomp_minimal "path/to/your/game.sfc"
+./build/Debug/snesrecomp_minimal game.sfc --headless --record out.mp4   # no window
 ```
 
-## Using snesrecomp in your project
+On Windows, copy `SDL2.dll` next to the exe.
+
+## Usage
 
 ### Add as a subdirectory (recommended)
 
@@ -138,49 +175,17 @@ project-specific ops as needed.
 
 Every `bus_write8` to a PPU register updates real PPU state. Every `bus_read8` from an APU port reads real SPC700 output. DMA transfers move real data between real hardware components. **You don't write any hardware emulation code — it's all already there.**
 
-## Architecture
+## Documentation
 
-```
-┌─────────────────────────────────────────────┐
-│           Your Recomp Project               │
-│  ┌─────────────┐  ┌──────────────────────┐  │
-│  │ Recompiled   │  │ Game-specific logic  │  │
-│  │ functions    │  │ (main loop, init)    │  │
-│  └──────┬───────┘  └──────────┬───────────┘  │
-│         │                     │              │
-│  ┌──────▼─────────────────────▼───────────┐  │
-│  │         snesrecomp library             │  │
-│  │  ┌──────────┐  ┌───────────────────┐   │  │
-│  │  │ CPU State │  │  Memory Bus       │   │  │
-│  │  │ (g_cpu)   │  │  bus_read/write8  │   │  │
-│  │  └──────────┘  └────────┬──────────┘   │  │
-│  │  ┌──────────┐           │              │  │
-│  │  │ Func     │  ┌────────▼──────────┐   │  │
-│  │  │ Table    │  │    LakeSnes HW    │   │  │
-│  │  └──────────┘  │  PPU APU DMA Cart │   │  │
-│  │                └────────┬──────────┘   │  │
-│  │  ┌──────────────────────▼──────────┐   │  │
-│  │  │  SDL2 Platform (video + audio)  │   │  │
-│  │  └────────────────────────────────┘   │  │
-│  └────────────────────────────────────────┘  │
-└─────────────────────────────────────────────┘
-```
-
-### Key design decisions
-
-- **LakeSnes's CPU is compiled but not driven.** Your recompiled native C code replaces it. LakeSnes's CPU module is included in the build because other components (DMA, etc.) reference it, but `snes_runFrame()` is never called.
-
-- **The `Snes` struct is the hardware backbone.** LakeSnes allocates and manages all hardware state (PPU, APU, DMA, Cart) inside a `Snes` struct. Our adapter layer routes bus reads/writes through it.
-
-- **WRAM lives in LakeSnes.** The 128KB of WRAM is `snes->ram[]`. Stack operations, direct page access, everything goes through the real memory map.
-
-- **Audio is real.** The SPC700 CPU and DSP run alongside your recompiled code. APU port writes (`$2140-$2143`) go to the real SPC700. Audio samples come out the other end.
+- [docs/architecture.md](docs/architecture.md): the layers, the two run modes, design decisions.
+- [docs/runtime.md](docs/runtime.md): command-line flags, environment variables, validation and profiling.
+- [tools/README.md](tools/README.md): disassembler, call-graph crawler, `autogen.py`.
 
 ## Want to recomp a SNES game?
 
 Here's the general workflow:
 
-1. **Get a disassembly** of your target game (or create one with tools like Mesen2's trace logger)
+1. **Get a disassembly** of your target game (`tools/disasm65816.py`, `tools/callgraph.py`)
 2. **Identify functions** — find subroutine boundaries (JSR/JSL/RTS/RTL patterns)
 3. **Recompile functions** to C — wrap each in `RECOMP_PATCH(name, snes_addr) { ... }`. Translate 65816 instructions using the `cpu_ops.h` op kit (`op_lda_imm16`, `op_sta_dp16`, …) and the bus functions. Auto-registration handles dispatch — no central list to maintain.
 4. **Wire up the main loop** — call the game's entry point function each frame
@@ -192,14 +197,33 @@ Because `RECOMP_PATCH` registrations run at static-init time and the dispatch ta
 
 The [Super Mario Kart recompilation](https://github.com/sp00nznet/mk) and [Mario Paint recompilation](https://github.com/sp00nznet/mariopaint) are projects using this library. Check them out for real-world examples.
 
+## Building from source
+
+As in Getting Started. A game repo builds it with `add_subdirectory(ext/snesrecomp)`.
+It also cross-builds with mingw-w64, which is how the netlab farm builds it:
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_SYSTEM_NAME=Windows \
+  -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+  -DCMAKE_PREFIX_PATH=<SDL2 mingw devel folder>
+cmake --build build
+```
+
+## Legal
+
+snesrecomp contains no game data. You supply your own ROM, and anything
+`tools/autogen.py` generates from it stays on your machine (`gen/` is gitignored).
+
 ## Credits
 
-- **[LakeSnes](https://github.com/angelo-wf/LakeSnes)** by angelo-wf — the excellent pure-C SNES emulator that provides all hardware emulation. MIT licensed.
+- **[LakeSnes](https://github.com/angelo-wf/LakeSnes)** by angelo-wf (used through the [sp00nznet fork](https://github.com/sp00nznet/LakeSnes)) — the excellent pure-C SNES emulator that provides all hardware emulation. MIT licensed.
+- **[Dear ImGui](https://github.com/ocornut/imgui)**: the menu overlay. MIT licensed.
+- **[stb_image_write](https://github.com/nothings/stb)**: screenshots. MIT / public domain.
 - **[SDL2](https://www.libsdl.org/)** — cross-platform multimedia. zlib licensed.
 - **[sp00nznet](https://github.com/sp00nznet)** — library design, adapter layer, and the recomp projects that use it.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Use it, fork it, ship games with it.
-
-LakeSnes is also MIT licensed. SDL2 is zlib licensed. You're good.
+MIT, see [LICENSE](LICENSE). Third-party code (LakeSnes, Dear ImGui,
+stb_image_write) keeps its own licence; see [NOTICE](NOTICE) and `LICENSES/`.
+Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).

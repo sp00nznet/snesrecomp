@@ -1,0 +1,10 @@
+snesrecomp is MIT (see LICENSE). It carries the following third-party code,
+each file under its own header; full licence texts are in LICENSES/.
+
+path                    upstream                                     version              licence
+ext/LakeSnes/           https://github.com/sp00nznet/LakeSnes        submodule pin        MIT (fork of angelo-wf/LakeSnes)
+                        (fork of https://github.com/angelo-wf/LakeSnes)
+third_party/imgui/      https://github.com/ocornut/imgui             1.90.9               MIT
+ext/stb_image_write.h   https://github.com/nothings/stb              v1.16                MIT or public domain (Unlicense), our choice: MIT
+
+SDL2 (https://www.libsdl.org/, zlib) is linked, not vendored.
