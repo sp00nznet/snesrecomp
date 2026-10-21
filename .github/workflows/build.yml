@@ -1,0 +1,28 @@
+# Builds the toolkit and its minimal example on every push and PR to main.
+# Nothing here needs a ROM; game-level conformance runs in the title repos.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: SDL2 via vcpkg
+        run: |
+          vcpkg install sdl2:x64-windows
+          echo "VCPKG_TOOLCHAIN=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_TOOLCHAIN"
+
+      - name: Build
+        run: cmake --build build --config Release
