@@ -21,9 +21,17 @@ versions follow SemVer once the first one is tagged (none yet).
   `CHANGELOG.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `docs/` (#6).
 
 ### Changed
+- LakeSnes bumped to include LakeSnes#2 and LakeSnes#3 (#11): the Super FX
+  (GSU-2) core is rewritten from fullsnes, and the DSP-1 is a clean-room
+  rewrite replacing Snes9x-derived code (mitaudit#2). Super FX titles run for
+  the first time (Stunt Race FX reaches a race). DSP-1 titles (Super Mario
+  Kart) get exact math instead of the old tables, so the numbers differ by a
+  unit or two and AI/physics drift from the old build after a few seconds.
 - LakeSnes bumped to include LakeSnes#1 (#4).
 
 ### Fixed
+- Super FX games hung: the old GSU core mis-decoded much of the opcode map
+  (LakeSnes#2, picked up by #11).
 - SNES Mouse reported Left and Right swapped: the packet sends Right first
   (LakeSnes#1, picked up by #4). Every title using `SNES_INPUT_MOUSE` sees it.
 - `examples/minimal` did not link with SDL2main (no `SDL_main`): it now
