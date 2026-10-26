@@ -299,6 +299,66 @@ static void mouse_script_apply(SnesMouseState *ms) {
     ms->dx = 0; ms->dy = 0; ms->left = false; ms->right = false;
 }
 
+/*
+ * Scripted joypad for headless runs (port 1):
+ *   SNESRECOMP_PAD_SCRIPT="frame[-end]:BTN[+BTN...] ..."   (space or comma separated)
+ * Holds the buttons from `frame` through `end` (default: 4 frames). Frames count
+ * input updates, i.e. presented frames. When set, the script is the only
+ * input, so a run is reproducible. Buttons: B Y SELECT START UP DOWN LEFT
+ * RIGHT A X L R (LakeSnes button order).
+ */
+#define PAD_SCRIPT_MAX 256
+static struct { int from, to; uint16_t mask; } s_pad[PAD_SCRIPT_MAX];
+static int s_pad_n = -1, s_pad_frame = 0;
+
+static uint16_t pad_button(const char *name, size_t len) {
+    static const char *names[12] = { "B", "Y", "SELECT", "START", "UP", "DOWN",
+                                     "LEFT", "RIGHT", "A", "X", "L", "R" };
+    for (int i = 0; i < 12; i++)
+        if (strlen(names[i]) == len && !strncmp(names[i], name, len)) return 1u << i;
+    fprintf(stderr, "SNESRECOMP_PAD_SCRIPT: unknown button '%.*s'\n", (int)len, name);
+    return 0;
+}
+
+static void pad_script_parse(void) {
+    s_pad_n = 0;
+    const char *p = getenv("SNESRECOMP_PAD_SCRIPT");
+    while (p && *p && s_pad_n < PAD_SCRIPT_MAX) {
+        while (*p == ' ' || *p == ',') p++;
+        if (!*p) break;
+        int from = 0, to = -1, used = 0;
+        if (sscanf(p, "%d-%d:%n", &from, &to, &used) < 2 || !used) {
+            to = -1;
+            if (sscanf(p, "%d:%n", &from, &used) < 1 || !used) break;
+        }
+        p += used;
+        uint16_t mask = 0;
+        while (*p && *p != ' ' && *p != ',') {
+            size_t len = strcspn(p, "+ ,");
+            mask |= pad_button(p, len);
+            p += len;
+            if (*p == '+') p++;
+        }
+        s_pad[s_pad_n].from = from;
+        s_pad[s_pad_n].to = to < 0 ? from + 3 : to;
+        s_pad[s_pad_n].mask = mask;
+        s_pad_n++;
+    }
+}
+
+/* Returns true when a pad script is active (and has set port 1). */
+static bool pad_script_apply(Snes *snes) {
+    if (s_pad_n < 0) pad_script_parse();
+    if (!getenv("SNESRECOMP_PAD_SCRIPT")) return false;
+    s_pad_frame++;
+    uint16_t held = 0;
+    for (int i = 0; i < s_pad_n; i++)
+        if (s_pad_frame >= s_pad[i].from && s_pad_frame <= s_pad[i].to) held |= s_pad[i].mask;
+    for (int btn = 0; btn < 12; btn++)
+        snes_setButtonState(snes, 1, btn, (held >> btn) & 1);
+    return true;
+}
+
 void recomp_input_update(void) {
     Snes *snes = snesrecomp_get_snes();
     if (!snes) return;
@@ -354,10 +414,12 @@ void recomp_input_update(void) {
         /* Standard joypad — driven from the configurable keyboard + gamepad
          * bindings (see menu_overlay). When the menu has input focus, the game
          * receives no presses. */
-        ensure_gamepads();
-        int block = menu_overlay_is_active();
-        for (int btn = 0; btn < 12; btn++)
-            snes_setButtonState(snes, 1, btn, block ? false : button_pressed(1, btn, keys));
+        if (!pad_script_apply(snes)) {
+            ensure_gamepads();
+            int block = menu_overlay_is_active();
+            for (int btn = 0; btn < 12; btn++)
+                snes_setButtonState(snes, 1, btn, block ? false : button_pressed(1, btn, keys));
+        }
     }
 
     /* --- Port 2 --- */

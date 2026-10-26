@@ -6,6 +6,8 @@ versions follow SemVer once the first one is tagged (none yet).
 ## [Unreleased]
 
 ### Added
+- `SNESRECOMP_PAD_SCRIPT="frame[-end]:BTN[+BTN] ..."`: scripted port-1 joypad for
+  headless runs; when set it is the only input, so a run is reproducible (#8).
 - `--headless` and `--record out.mp4` via `snesrecomp_parse_args()`: no window,
   renderer, audio device or pacing; `--record` pipes every frame to ffmpeg (#1).
 - `recomp_input_set_mouse_cursor_addr()`: steers a game's own cursor onto the
