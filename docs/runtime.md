@@ -25,6 +25,7 @@ never opens a window.
 | `SNESRECOMP_SHOT_FRAMES=120,300,600` | Screenshot after those presented frames (up to 32). |
 | `SNESRECOMP_EXIT_FRAME=700` | `exit(0)` after that frame. With the line above, a run captures the same moment every time. |
 | `SNESRECOMP_DUMP_PREFIX=path` | Prefix for PPU and snapshot dumps. |
+| `SNESRECOMP_PAD_SCRIPT="frame[-end]:BTN[+BTN] ..."` | Scripted port-1 joypad, e.g. `"450:START 1950-3000:B"`. A bare frame holds for 4 frames. Buttons: `B Y SELECT START UP DOWN LEFT RIGHT A X L R`. When set, live input is ignored. |
 | `SNESRECOMP_MOUSE_SCRIPT="frame:dx:dy:btn[:count] ..."` | Scripted SNES Mouse input. `@x:@y` instead of `dx:dy` parks a virtual pointer at SNES pixel coordinates (needs `recomp_input_set_mouse_cursor_addr`). `btn` is `0`, `L` or `R`. |
 | `SNESRECOMP_MOUSE_DEBUG=1` | Log mouse packets. |
 | `SNESRECOMP_INTERP_STATS=1` | One line per routine the timed loop interpreted instead of running natively. |
