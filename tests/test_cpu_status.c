@@ -1,0 +1,143 @@
+/* Synthetic register states and a single-byte stack stub; no ROM or emulator.
+ * Exercise the public and generated helpers against the same status contract. */
+#include "snesrecomp/cpu_ops.h"
+#include "snesrecomp/gen_ops.h"
+#include <stdio.h>
+
+static unsigned failures, scenarios, stack_reads;
+static uint8_t stack_value;
+static uint32_t stack_address;
+
+uint8_t bus_wram_read8(uint32_t offset) {
+    ++stack_reads;
+    stack_address = offset;
+    return stack_value;
+}
+
+uint8_t bus_read8(uint8_t bank, uint16_t address) {
+    return bus_wram_read8(((uint32_t)bank << 16) | address);
+}
+
+static void seed(bool emulation) {
+    g_cpu = (SnesCpu){
+        .C = 0xabcd, .X = 0x12ab, .Y = 0x34cd, .S = 0xabef,
+        .DP = 0x2468, .DB = 0x7e, .PB = 0x81,
+        .flag_C = true, .flag_Z = true, .flag_I = true, .flag_D = true,
+        .flag_V = true, .flag_N = true, .flag_E = emulation
+    }; /* Initial packed P is $CF; deliberately leave M/X unset in E mode. */
+    stack_reads = 0;
+}
+
+static void expect(const char *name, bool condition) {
+    if (!condition) {
+        fprintf(stderr, "FAIL: %s\n", name);
+        ++failures;
+    }
+}
+
+static void state(const char *name, bool e, uint8_t p, uint16_t x,
+                  uint16_t y, uint16_t sp, uint16_t accumulator) {
+    ++scenarios;
+    expect(name, cpu_get_p() == p && g_cpu.flag_E == e &&
+           g_cpu.X == x && g_cpu.Y == y && g_cpu.S == sp &&
+           g_cpu.C == accumulator && g_cpu.DP == 0x2468 &&
+           g_cpu.DB == 0x7e && g_cpu.PB == 0x81);
+}
+
+static void status_loads(void) {
+    static const struct {
+        bool e;
+        uint8_t input, packed;
+        uint16_t x, y, sp;
+    } cases[] = {
+        {false, 0x00, 0x00, 0x12ab, 0x34cd, 0xabef},
+        {false, 0x20, 0x20, 0x12ab, 0x34cd, 0xabef},
+        {false, 0x10, 0x10, 0x00ab, 0x00cd, 0xabef},
+        {false, 0x30, 0x30, 0x00ab, 0x00cd, 0xabef},
+        {false, 0xff, 0xff, 0x00ab, 0x00cd, 0xabef},
+        {true,  0x00, 0x30, 0x00ab, 0x00cd, 0x01ef},
+        {true,  0xcf, 0xff, 0x00ab, 0x00cd, 0x01ef},
+        {true,  0xa5, 0xb5, 0x00ab, 0x00cd, 0x01ef},
+        {true,  0x5a, 0x7a, 0x00ab, 0x00cd, 0x01ef},
+    };
+    void (*const setters[])(uint8_t) = {cpu_set_p, g_set_p};
+    for (unsigned helper = 0; helper < 2; ++helper) {
+        for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+            seed(cases[i].e);
+            setters[helper](cases[i].input);
+            state(helper ? "g_set_p" : "cpu_set_p", cases[i].e, cases[i].packed,
+                  cases[i].x, cases[i].y, cases[i].sp, 0xabcd);
+        }
+    }
+}
+
+static void rep_sep_paths(void) {
+    void (*const reps[])(uint8_t) = {op_rep, g_rep};
+    void (*const seps[])(uint8_t) = {op_sep, g_sep};
+    for (unsigned helper = 0; helper < 2; ++helper) {
+        seed(false);
+        seps[helper](0x10);
+        state("SEP X narrows indexes only", false, 0xdf, 0x00ab, 0x00cd, 0xabef, 0xabcd);
+        reps[helper](0x10);
+        state("REP X does not restore discarded bytes", false, 0xcf, 0x00ab, 0x00cd, 0xabef, 0xabcd);
+
+        seed(false);
+        seps[helper](0x20);
+        state("SEP M preserves indexes and B", false, 0xef, 0x12ab, 0x34cd, 0xabef, 0xabcd);
+        reps[helper](0x20);
+        state("REP M preserves full accumulator", false, 0xcf, 0x12ab, 0x34cd, 0xabef, 0xabcd);
+        reps[helper](0x81);
+        state("REP changes only requested non-width flags", false, 0x4e, 0x12ab, 0x34cd, 0xabef, 0xabcd);
+
+        seed(true);
+        reps[helper](0x30);
+        state("E mode REP cannot widen M/X", true, 0xff, 0x00ab, 0x00cd, 0x01ef, 0xabcd);
+        seed(true);
+        seps[helper](0x00);
+        state("E mode status invariants", true, 0xff, 0x00ab, 0x00cd, 0x01ef, 0xabcd);
+    }
+}
+
+static void plp_paths(void) {
+    /* The stack stub checks ordinary, non-wrapping pulls. General stack-access
+     * wrapping is outside this status-setter regression. */
+    for (unsigned helper = 0; helper < 2; ++helper) {
+        for (unsigned emulation = 0; emulation < 2; ++emulation) {
+            seed(emulation != 0);
+            g_cpu.S = 0x01fd;
+            stack_value = emulation ? 0x85 : 0x10;
+            if (helper) g_set_p(g_pull8()); /* tools/autogen.py's PLP path */
+            else op_plp();
+            state(helper ? "generated PLP" : "public PLP", emulation != 0,
+                  emulation ? 0xb5 : 0x10, 0x00ab, 0x00cd, 0x01fe, 0xabcd);
+            expect("PLP reads one bank-zero byte at incremented SP",
+                   stack_reads == 1 && stack_address == 0x01fe);
+        }
+    }
+}
+
+static void accumulator_byte(void) {
+    seed(false);
+    op_sep(0x20);
+    CPU_SET_A8(0);
+    state("CPU_SET_A8 preserves B and flags", false, 0xef, 0x12ab, 0x34cd, 0xabef, 0xab00);
+    op_lda_imm8(0x80);
+    state("8-bit LDA preserves B, updates N/Z", false, 0xed, 0x12ab, 0x34cd, 0xabef, 0xab80);
+    op_lda_imm8(0);
+    state("zero LDA preserves other flags", false, 0x6f, 0x12ab, 0x34cd, 0xabef, 0xab00);
+    g_seta8(0x55);
+    state("generated byte setter preserves B and flags", false, 0x6f, 0x12ab, 0x34cd, 0xabef, 0xab55);
+}
+
+int main(void) {
+    status_loads();
+    rep_sep_paths();
+    plp_paths();
+    accumulator_byte();
+    if (failures) {
+        fprintf(stderr, "%u failure(s) in %u synthetic CPU state scenarios\n", failures, scenarios);
+        return 1;
+    }
+    printf("PASS: %u synthetic CPU status/width scenarios (no ROM)\n", scenarios);
+    return 0;
+}
