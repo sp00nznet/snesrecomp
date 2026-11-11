@@ -424,7 +424,22 @@ void recomp_input_update(void) {
 
     /* --- Port 2 --- */
     if (s_device_type[1] == SNES_INPUT_SUPERSCOPE) {
-        /* Super Scope: feed position and buttons into LakeSnes */
+        /* Super Scope: the host mouse is the scope (left = fire, right =
+         * cursor, Start key = pause). A mouse script drives it headless.
+         * Off-window aim reads as offscreen, as on hardware. */
+        SnesMouseState m = {0};
+        m.left  = (mouse_buttons & SDL_BUTTON_LMASK) != 0;
+        m.right = (mouse_buttons & SDL_BUTTON_RMASK) != 0;
+        if (recomp_input_mouse_script_active()) mouse_script_apply(&m);
+        int px, py;
+        bool block = menu_overlay_is_active();
+        if (!block && platform_mouse_to_snes(&px, &py)) {
+            s_scope.x = (uint16_t)px; s_scope.y = (uint16_t)py;
+        } else {
+            s_scope.x = 0xFFFF; s_scope.y = 0xFFFF;
+        }
+        s_scope.buttons = block ? 0 : (uint8_t)((m.left ? 1 : 0) | (m.right ? 2 : 0) |
+                                               (button_pressed(1, SNES_BTN_IDX_START, keys) ? 8 : 0));
         snes_setSuperScopeState(snes, s_scope.x, s_scope.y, s_scope.buttons);
     } else if (s_device_type[1] == SNES_INPUT_JOYPAD) {
         /* Player 2 joypad — second keyboard set + second gamepad. */
