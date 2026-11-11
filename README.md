@@ -214,6 +214,11 @@ cmake --build build
 snesrecomp contains no game data. You supply your own ROM, and anything
 `tools/autogen.py` generates from it stays on your machine (`gen/` is gitignored).
 
+## Contributors
+
+snesrecomp is built by more than one person. See
+**[CONTRIBUTORS.md](CONTRIBUTORS.md)** for who did what. Thank you, all of you.
+
 ## Credits
 
 - **[LakeSnes](https://github.com/angelo-wf/LakeSnes)** by angelo-wf (used through the [sp00nznet fork](https://github.com/sp00nznet/LakeSnes)) — the excellent pure-C SNES emulator that provides all hardware emulation. MIT licensed.
