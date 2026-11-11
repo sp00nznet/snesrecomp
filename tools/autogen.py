@@ -331,8 +331,11 @@ def emit_function(data, addr24, P, is_long):
         if straight and (i + 1 >= len(order) or order[i + 1] != nxt):
             labels.add(nxt)
             ins["goto_next"] = nxt
+    # Shared blocks can sort before the actual call entry.
+    labels.add(addr)
     lines = [f"/* ${addr24:06X}, entered with P=${P:02X} via {'JSL' if is_long else 'JSR'} */",
-             f"void gen_{addr24:06X}(void) {{"]
+             f"void gen_{addr24:06X}(void) {{",
+             f"    goto L_{addr:04X};"]
     for pc in order:
         ins = insns[pc]
         n = ins["name"]
